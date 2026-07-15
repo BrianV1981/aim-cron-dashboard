@@ -260,48 +260,90 @@ class ConfirmActionModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class DashboardCommandProvider(Provider):
-    async def discover(self) -> DiscoveryHit:
-        yield DiscoveryHit("Cron Actions...", text="Job", help="Manage your scheduled tasks")
-        yield DiscoveryHit("Dashboard Settings...", text="Setting:", help="Configure application preferences")
-        yield DiscoveryHit("UI Layouts...", text="Layout:", help="Switch structural window layouts")
+class CronCommandProvider(Provider):
+    async def discover(self) -> Hit:
+        matcher = self.matcher("")
+        async for hit in self.search(""):
+            yield hit
 
     async def search(self, query: str) -> Hit:
         matcher = self.matcher(query)
         app = self.app
-        
         commands = [
             ("New Job", "Create a new cronjob", app.action_new_job),
             ("Refresh Table", "Reload the cronjob list from system", app.action_refresh),
             ("Force Run Job", "Execute the selected job in background", app.action_force_run),
             ("Delete Job", "Delete the selected job", app.action_delete_job),
             ("Toggle Pause/Resume", "Pause or resume the selected job", app.action_toggle_job),
-            (f"Setting: Toggle A.I.M. Badges [{'ON' if app.show_ai_badges else 'OFF'}]", "Show or hide AI agent icons", app.action_toggle_badges),
-            (f"Setting: Toggle Force Run Warning [{'ON' if app.confirm_force_run else 'OFF'}]", "Enable or disable safety popup", app.action_toggle_force_run_warning),
-            ("Help: How to resize panels", "View keyboard shortcuts for panel resizing", app.action_show_resize_help),
         ]
-        
-        # Add layout options
-        layouts = [
-            ("Layout: Side-by-Side (List Left)", "horizontal", False),
-            ("Layout: Side-by-Side (List Right)", "horizontal", True),
-            ("Layout: Stacked (List Top)", "vertical", False),
-            ("Layout: Stacked (List Bottom)", "vertical", True),
-        ]
-        for layout_name, orientation, swapped in layouts:
-            action = lambda o=orientation, s=swapped: app.action_set_layout(o, s)
-            commands.append((layout_name, f"Switch to {layout_name}", action))
-        
         for name, description, action in commands:
             score = matcher.match(name)
             if score > 0:
                 yield Hit(score, matcher.highlight(name), action, help=description)
 
+class SettingCommandProvider(Provider):
+    async def discover(self) -> Hit:
+        matcher = self.matcher("")
+        async for hit in self.search(""):
+            yield hit
+
+    async def search(self, query: str) -> Hit:
+        matcher = self.matcher(query)
+        app = self.app
+        commands = [
+            (f"Toggle A.I.M. Badges [{'ON' if app.show_ai_badges else 'OFF'}]", "Show or hide AI agent icons", app.action_toggle_badges),
+            (f"Toggle Force Run Warning [{'ON' if app.confirm_force_run else 'OFF'}]", "Enable or disable safety popup", app.action_toggle_force_run_warning),
+            ("Help: How to resize panels", "View keyboard shortcuts for panel resizing", app.action_show_resize_help),
+        ]
+        for name, description, action in commands:
+            score = matcher.match(name)
+            if score > 0:
+                yield Hit(score, matcher.highlight(name), action, help=description)
+
+class LayoutCommandProvider(Provider):
+    async def discover(self) -> Hit:
+        matcher = self.matcher("")
+        async for hit in self.search(""):
+            yield hit
+
+    async def search(self, query: str) -> Hit:
+        matcher = self.matcher(query)
+        app = self.app
+        layouts = [
+            ("Side-by-Side (List Left)", "horizontal", False),
+            ("Side-by-Side (List Right)", "horizontal", True),
+            ("Stacked (List Top)", "vertical", False),
+            ("Stacked (List Bottom)", "vertical", True),
+        ]
+        for layout_name, orientation, swapped in layouts:
+            action = lambda o=orientation, s=swapped: app.action_set_layout(o, s)
+            score = matcher.match(layout_name)
+            if score > 0:
+                yield Hit(score, matcher.highlight(layout_name), action, help=f"Switch to {layout_name}")
+
 class CronDashboard(App):
     """A Textual TUI to manage cron jobs."""
-    
-    COMMANDS = App.COMMANDS | {DashboardCommandProvider}
-    
+
+    COMMANDS = App.COMMANDS
+
+    def get_system_commands(self, screen):
+        yield from super().get_system_commands(screen)
+        yield ("Cron Actions...", "Manage scheduled tasks", self.action_search_jobs, True)
+        yield ("Dashboard Settings...", "Configure application preferences", self.action_search_settings, True)
+        yield ("UI Layouts...", "Switch structural window layouts", self.action_search_layouts, True)
+
+    def action_search_jobs(self) -> None:
+        from textual.command import CommandPalette
+        self.push_screen(CommandPalette(providers=[CronCommandProvider], placeholder="Search Cron Actions..."))
+
+    def action_search_settings(self) -> None:
+        from textual.command import CommandPalette
+        self.push_screen(CommandPalette(providers=[SettingCommandProvider], placeholder="Search Settings..."))
+
+    def action_search_layouts(self) -> None:
+        from textual.command import CommandPalette
+        self.push_screen(CommandPalette(providers=[LayoutCommandProvider], placeholder="Search Layouts..."))
+
     show_ai_badges = True
     confirm_force_run = True
     left_panel_size = 60

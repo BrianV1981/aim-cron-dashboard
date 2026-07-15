@@ -11,7 +11,7 @@ from textual.widgets import Header, Footer, DataTable, Static, Input, Button, La
 from textual.containers import Horizontal, Vertical, Container
 from textual.binding import Binding
 from textual.screen import ModalScreen
-from textual.command import Provider, Hit
+from textual.command import Provider, Hit, DiscoveryHit
 from textual.theme import Theme
 from rich.text import Text
 import cron_descriptor
@@ -261,6 +261,11 @@ class ConfirmActionModal(ModalScreen[bool]):
 
 
 class DashboardCommandProvider(Provider):
+    async def discover(self) -> DiscoveryHit:
+        yield DiscoveryHit("Cron Actions...", text="Job", help="Manage your scheduled tasks")
+        yield DiscoveryHit("Dashboard Settings...", text="Setting:", help="Configure application preferences")
+        yield DiscoveryHit("UI Layouts...", text="Layout:", help="Switch structural window layouts")
+
     async def search(self, query: str) -> Hit:
         matcher = self.matcher(query)
         app = self.app

@@ -277,6 +277,9 @@ class CronCommandProvider(Provider):
             ("Toggle Pause/Resume", "Pause or resume the selected job", app.action_toggle_job),
         ]
         for name, description, action in commands:
+            if not query:
+                yield Hit(1.0, name, action, help=description)
+                continue
             score = matcher.match(name)
             if score > 0:
                 yield Hit(score, matcher.highlight(name), action, help=description)
@@ -296,6 +299,9 @@ class SettingCommandProvider(Provider):
             ("Help: How to resize panels", "View keyboard shortcuts for panel resizing", app.action_show_resize_help),
         ]
         for name, description, action in commands:
+            if not query:
+                yield Hit(1.0, name, action, help=description)
+                continue
             score = matcher.match(name)
             if score > 0:
                 yield Hit(score, matcher.highlight(name), action, help=description)
@@ -317,6 +323,9 @@ class LayoutCommandProvider(Provider):
         ]
         for layout_name, orientation, swapped in layouts:
             action = lambda o=orientation, s=swapped: app.action_set_layout(o, s)
+            if not query:
+                yield Hit(1.0, layout_name, action, help=f"Switch to {layout_name}")
+                continue
             score = matcher.match(layout_name)
             if score > 0:
                 yield Hit(score, matcher.highlight(layout_name), action, help=f"Switch to {layout_name}")

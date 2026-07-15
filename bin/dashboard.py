@@ -11,6 +11,7 @@ from textual.widgets import Header, Footer, DataTable, Static, Input, Button, La
 from textual.containers import Horizontal, Vertical
 from textual.binding import Binding
 from textual.screen import ModalScreen
+from textual.command import Provider, Hit
 from rich.text import Text
 import cron_descriptor
 
@@ -214,8 +215,28 @@ class ConfirmActionModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class DashboardCommandProvider(Provider):
+    async def search(self, query: str) -> Hit:
+        matcher = self.matcher(query)
+        app = self.app
+        
+        commands = [
+            ("New Job", "Create a new cronjob", app.action_new_job),
+            ("Refresh Table", "Reload the cronjob list from system", app.action_refresh),
+            ("Force Run Job", "Execute the selected job in background", app.action_force_run),
+            ("Delete Job", "Delete the selected job", app.action_delete_job),
+            ("Toggle Pause/Resume", "Pause or resume the selected job", app.action_toggle_job),
+        ]
+        
+        for name, description, action in commands:
+            score = matcher.match(name)
+            if score > 0:
+                yield Hit(score, matcher.highlight(name), action, help=description)
+
 class CronDashboard(App):
     """A Textual TUI to manage cron jobs."""
+    
+    COMMANDS = App.COMMANDS | {DashboardCommandProvider}
 
     CSS = """
     Screen {

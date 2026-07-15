@@ -226,6 +226,9 @@ class DashboardCommandProvider(Provider):
             ("Force Run Job", "Execute the selected job in background", app.action_force_run),
             ("Delete Job", "Delete the selected job", app.action_delete_job),
             ("Toggle Pause/Resume", "Pause or resume the selected job", app.action_toggle_job),
+            ("Setting: Toggle Dark/Light Theme", "Switch the UI theme", app.action_toggle_dark),
+            (f"Setting: Toggle A.I.M. Badges [{'ON' if app.show_ai_badges else 'OFF'}]", "Show or hide AI agent icons", app.action_toggle_badges),
+            (f"Setting: Toggle Force Run Warning [{'ON' if app.confirm_force_run else 'OFF'}]", "Enable or disable safety popup", app.action_toggle_force_run_warning),
         ]
         
         for name, description, action in commands:
@@ -237,6 +240,9 @@ class CronDashboard(App):
     """A Textual TUI to manage cron jobs."""
     
     COMMANDS = App.COMMANDS | {DashboardCommandProvider}
+    
+    show_ai_badges = True
+    confirm_force_run = True
 
     CSS = """
     Screen {
@@ -302,6 +308,9 @@ class CronDashboard(App):
 
     def format_cmd(self, cmd: str) -> str:
         """Add a high-visibility badge to known AI agent processes."""
+        if not self.show_ai_badges:
+            return cmd
+            
         if "tmux new-session" in cmd:
             return f"🤖 [bold cyan][Ephemeral A.I.M. Agent][/bold cyan] {cmd}"
             
@@ -344,6 +353,15 @@ class CronDashboard(App):
     def on_search_submitted(self, event: Input.Submitted) -> None:
         """Return focus to the table when user hits enter in search."""
         self.query_one("#job-table").focus()
+
+    def action_toggle_badges(self) -> None:
+        self.show_ai_badges = not self.show_ai_badges
+        self.refresh_jobs()
+        self.notify(f"A.I.M. Badges {'enabled' if self.show_ai_badges else 'disabled'}.")
+
+    def action_toggle_force_run_warning(self) -> None:
+        self.confirm_force_run = not self.confirm_force_run
+        self.notify(f"Force Run Warning {'enabled' if self.confirm_force_run else 'disabled'}.")
 
     def action_focus_search(self) -> None:
         """Focus the search input when / is pressed."""
@@ -399,13 +417,16 @@ class CronDashboard(App):
                         subprocess.Popen(cmd, shell=True, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         self.notify(f"Dispatched background task:\n{cmd}", title="Force Run Initiated")
 
-                modal = ConfirmActionModal(
-                    title="Force Run Job",
-                    prompt=f"Are you sure you want to instantly run this job in the background?\n\n{cmd}",
-                    action_name="Yes (Run)",
-                    variant="warning"
-                )
-                self.push_screen(modal, check_run)
+                if self.confirm_force_run:
+                    modal = ConfirmActionModal(
+                        title="Force Run Job",
+                        prompt=f"Are you sure you want to instantly run this job in the background?\n\n{cmd}",
+                        action_name="Yes (Run)",
+                        variant="warning"
+                    )
+                    self.push_screen(modal, check_run)
+                else:
+                    check_run(True)
             except Exception:
                 self.notify("Error selecting job for force run.", severity="error")
 

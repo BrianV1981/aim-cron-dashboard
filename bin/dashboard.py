@@ -241,12 +241,12 @@ class CronDashboard(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("ctrl+r", "refresh", "Refresh"),
+        Binding("r", "refresh", "Refresh"),
         Binding("/", "focus_search", "Search"),
         Binding("n", "new_job", "New Job"),
         Binding("x", "delete_job", "Delete"),
         Binding("p", "toggle_job", "Pause/Resume"),
-        Binding("r", "force_run", "Force Run"),
+        Binding("ctrl+r", "force_run", "Force Run"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -362,9 +362,18 @@ class CronDashboard(App):
                 job = self.jobs[int(row_key)]
                 cmd = job["cmd"]
                 
-                # Execute asynchronously in the background
-                subprocess.Popen(cmd, shell=True, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                self.notify(f"Dispatched background task:\n{cmd}", title="Force Run Initiated")
+                def check_run(confirm: bool) -> None:
+                    if confirm:
+                        subprocess.Popen(cmd, shell=True, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        self.notify(f"Dispatched background task:\n{cmd}", title="Force Run Initiated")
+
+                modal = ConfirmActionModal(
+                    title="Force Run Job",
+                    prompt=f"Are you sure you want to instantly run this job in the background?\n\n{cmd}",
+                    action_name="Yes (Run)",
+                    variant="warning"
+                )
+                self.push_screen(modal, check_run)
             except Exception:
                 self.notify("Error selecting job for force run.", severity="error")
 

@@ -3,6 +3,8 @@ import subprocess
 import os
 import sys
 import re
+import datetime
+from pathlib import Path
 from textual.app import App, ComposeResult
 from textual import on
 from textual.widgets import Header, Footer, DataTable, Static, Input, Button, Label
@@ -57,49 +59,51 @@ class CronManager:
             return []
 
     @staticmethod
+    def get_crontab_raw() -> str:
+        try:
+            return subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
+        except subprocess.CalledProcessError:
+            return ""
+
+    @staticmethod
     def save_crontab(lines: list[str]) -> None:
-        """Saves a list of strings as the new crontab."""
+        """Saves a list of strings as the new crontab, backing up the old one first."""
+        current_content = CronManager.get_crontab_raw()
+        if current_content.strip():
+            backup_dir = Path.home() / ".local" / "state" / "aim-cron-dashboard" / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_file = backup_dir / f"crontab.bak.{timestamp}"
+            backup_file.write_text(current_content)
+
         new_crontab = "\n".join(lines) + "\n"
         subprocess.run(["crontab", "-"], input=new_crontab, text=True, check=True)
         
     @staticmethod
     def add_job(schedule: str, cmd: str) -> None:
-        try:
-            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-            current = result.stdout
-        except subprocess.CalledProcessError:
-            current = ""
-            
-        new_job = f"{schedule} {cmd}\n"
-        subprocess.run(["crontab", "-"], input=current + new_job, text=True, check=True)
+        current_lines = CronManager.get_crontab_raw().splitlines()
+        current_lines.append(f"{schedule} {cmd}")
+        CronManager.save_crontab(current_lines)
 
     @staticmethod
     def delete_job(target_raw_line: str) -> None:
-        try:
-            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, check=True)
-            lines = result.stdout.split('\n')
-            new_lines = [line for line in lines if line.strip() != target_raw_line.strip()]
-            CronManager.save_crontab(new_lines)
-        except subprocess.CalledProcessError:
-            pass
+        current_lines = CronManager.get_crontab_raw().splitlines()
+        new_lines = [line for line in current_lines if line.strip() != target_raw_line.strip()]
+        CronManager.save_crontab(new_lines)
             
     @staticmethod
     def toggle_job(target_raw_line: str) -> None:
-        try:
-            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, check=True)
-            lines = result.stdout.split('\n')
-            new_lines = []
-            for line in lines:
-                if line.strip() == target_raw_line.strip():
-                    if line.startswith('#'):
-                        new_lines.append(line.lstrip('#').lstrip())
-                    else:
-                        new_lines.append(f"# {line}")
+        current_lines = CronManager.get_crontab_raw().splitlines()
+        new_lines = []
+        for line in current_lines:
+            if line.strip() == target_raw_line.strip():
+                if line.startswith('#'):
+                    new_lines.append(line.lstrip('#').lstrip())
                 else:
-                    new_lines.append(line)
-            CronManager.save_crontab(new_lines)
-        except subprocess.CalledProcessError:
-            pass
+                    new_lines.append(f"# {line}")
+            else:
+                new_lines.append(line)
+        CronManager.save_crontab(new_lines)
 
 
 class NewJobModal(ModalScreen[tuple]):
@@ -237,11 +241,12 @@ class CronDashboard(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("r", "refresh", "Refresh"),
+        Binding("ctrl+r", "refresh", "Refresh"),
         Binding("/", "focus_search", "Search"),
         Binding("n", "new_job", "New Job"),
         Binding("x", "delete_job", "Delete"),
         Binding("p", "toggle_job", "Pause/Resume"),
+        Binding("r", "force_run", "Force Run"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -265,6 +270,9 @@ class CronDashboard(App):
 
     def format_cmd(self, cmd: str) -> str:
         """Add a high-visibility badge to known AI agent processes."""
+        if "tmux new-session" in cmd:
+            return f"🤖 [bold cyan][Ephemeral A.I.M. Agent][/bold cyan] {cmd}"
+            
         agents = ["agy", "aider", "claude", "grok", "gpt", "agent", "opencode", "gemini", "codex", "antigravity"]
         if any(agent in cmd.lower() for agent in agents):
             return f"[bold cyan][A.I.][/bold cyan] {cmd}"
@@ -345,6 +353,20 @@ class CronDashboard(App):
                 self.push_screen(modal, check_delete)
             except Exception as e:
                 self.notify("Error selecting job.", severity="error")
+
+    def action_force_run(self) -> None:
+        table = self.query_one("#job-table", DataTable)
+        if table.cursor_row is not None:
+            try:
+                row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+                job = self.jobs[int(row_key)]
+                cmd = job["cmd"]
+                
+                # Execute asynchronously in the background
+                subprocess.Popen(cmd, shell=True, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.notify(f"Dispatched background task:\n{cmd}", title="Force Run Initiated")
+            except Exception:
+                self.notify("Error selecting job for force run.", severity="error")
 
     def action_toggle_job(self) -> None:
         table = self.query_one("#job-table", DataTable)

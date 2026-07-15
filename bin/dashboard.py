@@ -220,6 +220,7 @@ class NewJobModal(ModalScreen[tuple]):
                     
                     with Horizontal(id="quick-actions"):
                         yield Button("@hourly", id="preset-hourly", classes="preset-btn")
+                        yield Button("@midnight", id="preset-midnight", classes="preset-btn")
                         yield Button("@daily", id="preset-daily", classes="preset-btn")
                         yield Button("@weekly", id="preset-weekly", classes="preset-btn")
                         yield Button("*/5 * * * *", id="preset-5m", classes="preset-btn")
@@ -241,12 +242,17 @@ class NewJobModal(ModalScreen[tuple]):
                         "│ │ └──── Day of month (1-31)\n"
                         "│ └────── Hour (0-23)\n"
                         "└──────── Minute (0-59)\n\n"
+                        "[b]Examples:[/b]\n"
+                        "[cyan]0 4 * * *[/cyan]    : Daily at 4:00 AM\n"
+                        "[cyan]*/15 * * * *[/cyan] : Every 15 minutes\n"
+                        "[cyan]0 0 * * 1-5[/cyan]  : Midnight on weekdays\n\n"
                         "[b]Shortcuts:[/b]\n"
-                        "[cyan]@reboot[/cyan]  : Run at startup\n"
-                        "[cyan]@hourly[/cyan]  : Run every hour\n"
-                        "[cyan]@daily[/cyan]   : Run every day at midnight\n"
-                        "[cyan]@weekly[/cyan]  : Run every Sunday\n"
-                        "[cyan]@monthly[/cyan] : Run once a month\n"
+                        "[cyan]@reboot[/cyan]   : Run at startup\n"
+                        "[cyan]@hourly[/cyan]   : Run every hour\n"
+                        "[cyan]@midnight[/cyan] : Run every midnight\n"
+                        "[cyan]@daily[/cyan]    : Run every midnight\n"
+                        "[cyan]@weekly[/cyan]   : Run every Sunday\n"
+                        "[cyan]@monthly[/cyan]  : Run once a month\n"
                     )
                     yield Static(cheatsheet)
                 
@@ -267,6 +273,8 @@ class NewJobModal(ModalScreen[tuple]):
             sched_input = self.query_one("#schedule-input", Input)
             if event.button.id == "preset-hourly":
                 sched_input.value = "@hourly"
+            elif event.button.id == "preset-midnight":
+                sched_input.value = "@midnight"
             elif event.button.id == "preset-daily":
                 sched_input.value = "@daily"
             elif event.button.id == "preset-weekly":

@@ -12,8 +12,53 @@ from textual.containers import Horizontal, Vertical
 from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.command import Provider, Hit
+from textual.theme import Theme
 from rich.text import Text
 import cron_descriptor
+
+aim_theme = Theme(
+    name="aim-dark",
+    primary="#00ffff", 
+    secondary="#0088ff",
+    accent="#00ffff",
+    foreground="#ffffff",
+    background="#121212",
+    surface="#1e1e1e",
+    panel="#2e2e2e",
+    dark=True,
+)
+
+class HelpModal(ModalScreen):
+    """Modal dialog to show help instructions."""
+    CSS = """
+    HelpModal {
+        align: center middle;
+        background: $background 50%;
+    }
+    #help-dialog {
+        width: 60;
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+        border: round $primary;
+    }
+    """
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="help-dialog"):
+            yield Label("[bold cyan]Panel Resizing Guide[/bold cyan]\n")
+            yield Label("You can dynamically resize the split panes using your keyboard:")
+            yield Label("• Press [bold][[/bold] to shrink the left panel by 5%.")
+            yield Label("• Press [bold]][/bold] to expand the left panel by 5%.\n")
+            yield Label("Alternatively, press [bold]ctrl+p[/bold] and search for 'Layout' to select a preset split (50/50, 60/40, etc).")
+            yield Button("Got it", variant="primary", id="btn-ok")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss()
+
+    def action_cancel(self) -> None:
+        self.dismiss()
 
 class CronManager:
     """Wrapper for crontab commands."""
@@ -226,10 +271,21 @@ class DashboardCommandProvider(Provider):
             ("Force Run Job", "Execute the selected job in background", app.action_force_run),
             ("Delete Job", "Delete the selected job", app.action_delete_job),
             ("Toggle Pause/Resume", "Pause or resume the selected job", app.action_toggle_job),
-            ("Setting: Toggle Dark/Light Theme", "Switch the UI theme", app.action_toggle_dark),
             (f"Setting: Toggle A.I.M. Badges [{'ON' if app.show_ai_badges else 'OFF'}]", "Show or hide AI agent icons", app.action_toggle_badges),
             (f"Setting: Toggle Force Run Warning [{'ON' if app.confirm_force_run else 'OFF'}]", "Enable or disable safety popup", app.action_toggle_force_run_warning),
+            ("Help: How to resize panels", "View keyboard shortcuts for panel resizing", app.action_show_resize_help),
         ]
+        
+        # Add layout options
+        layouts = [
+            ("Layout: 50/50 Split", 50),
+            ("Layout: 60/40 Split", 60),
+            ("Layout: 70/30 Split", 70),
+            ("Layout: 80/20 Split", 80),
+        ]
+        for layout_name, left_pct in layouts:
+            action = lambda pct=left_pct: app.action_set_layout(pct)
+            commands.append((layout_name, f"Set the left panel width to {left_pct}%", action))
         
         for name, description, action in commands:
             score = matcher.match(name)
@@ -243,6 +299,7 @@ class CronDashboard(App):
     
     show_ai_badges = True
     confirm_force_run = True
+    left_panel_width = 60
 
     CSS = """
     Screen {
@@ -285,6 +342,9 @@ class CronDashboard(App):
         Binding("x", "delete_job", "Delete"),
         Binding("p", "toggle_job", "Pause/Resume"),
         Binding("ctrl+r", "force_run", "Force Run"),
+        Binding("[", "resize_left", "Shrink Pane"),
+        Binding("]", "resize_right", "Expand Pane"),
+        Binding("?", "show_resize_help", "Help"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -298,6 +358,8 @@ class CronDashboard(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.register_theme(aim_theme)
+        self.theme = "aim-dark"
         self.title = "A.I.M. Sovereign Orchestrator"
         self.sub_title = "Cron Dashboard"
         table = self.query_one("#job-table", DataTable)
@@ -362,6 +424,28 @@ class CronDashboard(App):
     def action_toggle_force_run_warning(self) -> None:
         self.confirm_force_run = not self.confirm_force_run
         self.notify(f"Force Run Warning {'enabled' if self.confirm_force_run else 'disabled'}.")
+
+    def action_show_resize_help(self) -> None:
+        self.push_screen(HelpModal())
+
+    def action_set_layout(self, left_percent: int) -> None:
+        self.left_panel_width = left_percent
+        self.apply_layout()
+        self.notify(f"Layout set to {left_percent}/{100-left_percent}")
+
+    def action_resize_left(self) -> None:
+        self.left_panel_width = max(10, self.left_panel_width - 5)
+        self.apply_layout()
+
+    def action_resize_right(self) -> None:
+        self.left_panel_width = min(90, self.left_panel_width + 5)
+        self.apply_layout()
+
+    def apply_layout(self) -> None:
+        left = self.query_one("#left-panel")
+        right = self.query_one("#main-panel")
+        left.styles.width = f"{self.left_panel_width}%"
+        right.styles.width = f"{100 - self.left_panel_width}%"
 
     def action_focus_search(self) -> None:
         """Focus the search input when / is pressed."""

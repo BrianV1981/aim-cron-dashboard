@@ -446,9 +446,9 @@ class CronDashboard(App):
         right = self.query_one("#main-panel")
         
         if swapped:
-            left.move_after(right)
+            container.move_child(left, after=right)
         else:
-            left.move_before(right)
+            container.move_child(left, before=right)
             
         self.apply_layout()
         self.notify(f"Layout changed.")

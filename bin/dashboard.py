@@ -5,9 +5,10 @@ import sys
 import re
 from textual.app import App, ComposeResult
 from textual import on
-from textual.widgets import Header, Footer, DataTable, Static, Input
+from textual.widgets import Header, Footer, DataTable, Static, Input, Button, Label
 from textual.containers import Horizontal, Vertical
 from textual.binding import Binding
+from textual.screen import ModalScreen
 from rich.text import Text
 import cron_descriptor
 
@@ -25,10 +26,14 @@ class CronManager:
             jobs = []
             for line in result.stdout.split('\n'):
                 line = line.strip()
-                if not line or line.startswith('#'):
+                if not line:
                     continue
-                # A basic cron line parsing (5 fields for schedule, rest is command)
-                parts = line.split(maxsplit=5)
+                
+                # Check if paused
+                is_paused = line.startswith('#')
+                active_line = line.lstrip('#').strip()
+                
+                parts = active_line.split(maxsplit=5)
                 if len(parts) >= 6:
                     schedule = " ".join(parts[:5])
                     cmd = parts[5]
@@ -36,14 +41,172 @@ class CronManager:
                         human_schedule = cron_descriptor.get_description(schedule)
                     except Exception:
                         human_schedule = schedule
+                        
+                    if is_paused:
+                        human_schedule = f"[PAUSED] {human_schedule}"
+                        
                     jobs.append({
+                        "raw_line": line,
                         "raw_schedule": schedule,
                         "human_schedule": human_schedule,
-                        "cmd": cmd
+                        "cmd": cmd,
+                        "is_paused": is_paused
                     })
             return jobs
         except subprocess.CalledProcessError:
             return []
+
+    @staticmethod
+    def save_crontab(lines: list[str]) -> None:
+        """Saves a list of strings as the new crontab."""
+        new_crontab = "\n".join(lines) + "\n"
+        subprocess.run(["crontab", "-"], input=new_crontab, text=True, check=True)
+        
+    @staticmethod
+    def add_job(schedule: str, cmd: str) -> None:
+        try:
+            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+            current = result.stdout
+        except subprocess.CalledProcessError:
+            current = ""
+            
+        new_job = f"{schedule} {cmd}\n"
+        subprocess.run(["crontab", "-"], input=current + new_job, text=True, check=True)
+
+    @staticmethod
+    def delete_job(target_raw_line: str) -> None:
+        try:
+            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, check=True)
+            lines = result.stdout.split('\n')
+            new_lines = [line for line in lines if line.strip() != target_raw_line.strip()]
+            CronManager.save_crontab(new_lines)
+        except subprocess.CalledProcessError:
+            pass
+            
+    @staticmethod
+    def toggle_job(target_raw_line: str) -> None:
+        try:
+            result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, check=True)
+            lines = result.stdout.split('\n')
+            new_lines = []
+            for line in lines:
+                if line.strip() == target_raw_line.strip():
+                    if line.startswith('#'):
+                        new_lines.append(line.lstrip('#').lstrip())
+                    else:
+                        new_lines.append(f"# {line}")
+                else:
+                    new_lines.append(line)
+            CronManager.save_crontab(new_lines)
+        except subprocess.CalledProcessError:
+            pass
+
+
+class NewJobModal(ModalScreen[tuple]):
+    """Modal dialog to add a new cron job."""
+    
+    CSS = """
+    NewJobModal {
+        align: center middle;
+    }
+    #new-job-dialog {
+        width: 60;
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+        border: thick $primary 80%;
+    }
+    .buttons {
+        width: 100%;
+        layout: horizontal;
+        align: center middle;
+        margin-top: 1;
+    }
+    Button {
+        margin: 0 1;
+    }
+    """
+    
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="new-job-dialog"):
+            yield Label("New Cron Job")
+            yield Input(id="schedule-input", placeholder="Schedule (e.g. 0 4 * * *)")
+            yield Input(id="cmd-input", placeholder="Command (e.g. /path/to/script.sh)")
+            with Horizontal(classes="buttons"):
+                yield Button("Save", variant="success", id="btn-save")
+                yield Button("Cancel", variant="primary", id="btn-cancel")
+                
+    def on_mount(self) -> None:
+        self.query_one("#schedule-input").focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-save":
+            schedule = self.query_one("#schedule-input", Input).value.strip()
+            cmd = self.query_one("#cmd-input", Input).value.strip()
+            if schedule and cmd:
+                self.dismiss((schedule, cmd))
+            else:
+                self.app.notify("Schedule and Command cannot be empty.", title="Error", severity="error")
+        else:
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ConfirmActionModal(ModalScreen[bool]):
+    """Modal dialog to confirm an action (e.g., delete)."""
+
+    def __init__(self, title: str, prompt: str, action_name: str, variant: str = "error", *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dialog_title = title
+        self.prompt = prompt
+        self.action_name = action_name
+        self.variant = variant
+
+    CSS = """
+    ConfirmActionModal {
+        align: center middle;
+    }
+    #confirm-action-dialog {
+        width: 50;
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+        border: thick $primary 80%;
+    }
+    .buttons {
+        width: 100%;
+        layout: horizontal;
+        align: center middle;
+        margin-top: 1;
+    }
+    Button {
+        margin: 0 1;
+    }
+    """
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="confirm-action-dialog"):
+            yield Label(f"[bold]{self.dialog_title}[/bold]")
+            yield Label(self.prompt)
+            with Horizontal(classes="buttons"):
+                yield Button(self.action_name, variant=self.variant, id="btn-yes")
+                yield Button("Cancel", variant="primary", id="btn-no")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-yes":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
 
 class CronDashboard(App):
     """A Textual TUI to manage cron jobs."""
@@ -76,6 +239,9 @@ class CronDashboard(App):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("/", "focus_search", "Search"),
+        Binding("n", "new_job", "New Job"),
+        Binding("x", "delete_job", "Delete"),
+        Binding("p", "toggle_job", "Pause/Resume"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -116,7 +282,18 @@ class CronDashboard(App):
                 continue
                 
             cmd = self.format_cmd(job["cmd"])
-            table.add_row(job["raw_schedule"], job["human_schedule"], cmd, key=str(idx))
+            
+            # Dim the row if paused
+            if job['is_paused']:
+                schedule_display = Text(job["raw_schedule"], style="dim")
+                human_display = Text(job["human_schedule"], style="dim")
+                cmd_display = Text(cmd, style="dim")
+            else:
+                schedule_display = job["raw_schedule"]
+                human_display = job["human_schedule"]
+                cmd_display = cmd
+                
+            table.add_row(schedule_display, human_display, cmd_display, key=str(idx))
 
     @on(Input.Changed, "#search-input")
     def on_search_changed(self, event: Input.Changed) -> None:
@@ -125,7 +302,7 @@ class CronDashboard(App):
 
     @on(Input.Submitted, "#search-input")
     def on_search_submitted(self, event: Input.Submitted) -> None:
-        """Return focus to the tree when user hits enter in search."""
+        """Return focus to the table when user hits enter in search."""
         self.query_one("#job-table").focus()
 
     def action_focus_search(self) -> None:
@@ -136,6 +313,65 @@ class CronDashboard(App):
         """Manually refresh the table."""
         self.refresh_jobs()
         self.notify("Jobs refreshed.", title="A.I.M.")
+
+    def action_new_job(self) -> None:
+        def check_new_job(result: tuple | None) -> None:
+            if result is not None:
+                schedule, cmd = result
+                CronManager.add_job(schedule, cmd)
+                self.refresh_jobs()
+                self.notify("Job added.", title="Success")
+        self.push_screen(NewJobModal(), check_new_job)
+
+    def action_delete_job(self) -> None:
+        table = self.query_one("#job-table", DataTable)
+        if table.cursor_row is not None:
+            try:
+                row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+                job = self.jobs[int(row_key)]
+                
+                def check_delete(confirm: bool) -> None:
+                    if confirm:
+                        CronManager.delete_job(job["raw_line"])
+                        self.refresh_jobs()
+                        self.notify("Job deleted.", title="Success")
+                        
+                modal = ConfirmActionModal(
+                    title="Delete Job",
+                    prompt=f"Are you sure you want to delete this job?\n\n{job['cmd']}",
+                    action_name="Yes (Delete)",
+                    variant="error"
+                )
+                self.push_screen(modal, check_delete)
+            except Exception as e:
+                self.notify("Error selecting job.", severity="error")
+
+    def action_toggle_job(self) -> None:
+        table = self.query_one("#job-table", DataTable)
+        if table.cursor_row is not None:
+            try:
+                row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+                job = self.jobs[int(row_key)]
+                
+                action_str = "Resume" if job["is_paused"] else "Pause"
+                variant_str = "success" if job["is_paused"] else "warning"
+                
+                def check_toggle(confirm: bool) -> None:
+                    if confirm:
+                        CronManager.toggle_job(job["raw_line"])
+                        self.refresh_jobs()
+                        self.notify(f"Job {action_str.lower()}d.", title="Success")
+                        
+                modal = ConfirmActionModal(
+                    title=f"{action_str} Job",
+                    prompt=f"Are you sure you want to {action_str.lower()} this job?\n\n{job['cmd']}",
+                    action_name=f"Yes ({action_str})",
+                    variant=variant_str
+                )
+                
+                self.push_screen(modal, check_toggle)
+            except Exception:
+                self.notify("Error selecting job.", severity="error")
 
     @on(DataTable.RowHighlighted, "#job-table")
     def on_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
@@ -151,7 +387,11 @@ class CronDashboard(App):
             try:
                 row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
                 job = self.jobs[int(row_key)]
-                preview_text = f"Raw Schedule: {job['raw_schedule']}\n"
+                
+                status = "[bold red]PAUSED[/bold red]" if job['is_paused'] else "[bold green]ACTIVE[/bold green]"
+                
+                preview_text = f"Status: {status}\n\n"
+                preview_text += f"Raw Schedule: {job['raw_schedule']}\n"
                 preview_text += f"Human Readable: {job['human_schedule']}\n\n"
                 preview_text += f"Command:\n{job['cmd']}"
                 preview_area.update(preview_text)

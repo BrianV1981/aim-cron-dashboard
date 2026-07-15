@@ -161,11 +161,23 @@ class NewJobModal(ModalScreen[tuple]):
         background: $background 50%;
     }
     #new-job-dialog {
-        width: 60;
+        width: 80;
         height: auto;
         padding: 1 2;
         background: $surface;
         border: round $primary;
+    }
+    #form-and-help {
+        height: auto;
+    }
+    #form-area {
+        width: 1fr;
+        padding-right: 2;
+    }
+    #help-area {
+        width: 1fr;
+        border-left: solid $primary-muted;
+        padding-left: 2;
     }
     .buttons {
         width: 100%;
@@ -176,18 +188,67 @@ class NewJobModal(ModalScreen[tuple]):
     Button {
         margin: 0 1;
     }
+    .preset-btn {
+        min-width: 10;
+        height: 1;
+        border: none;
+        padding: 0 1;
+        margin: 0 1;
+        background: $primary-muted;
+    }
+    .preset-btn:hover {
+        background: $primary;
+    }
+    #quick-actions {
+        height: auto;
+        margin-top: 1;
+        margin-bottom: 1;
+        align: center middle;
+    }
     """
     
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
         with Vertical(id="new-job-dialog"):
-            yield Label("New Cron Job")
-            yield Input(id="schedule-input", placeholder="Schedule (e.g. 0 4 * * *)")
-            yield Input(id="cmd-input", placeholder="Command (e.g. /path/to/script.sh)")
-            with Horizontal(classes="buttons"):
-                yield Button("Save", variant="success", id="btn-save")
-                yield Button("Cancel", variant="primary", id="btn-cancel")
+            yield Label("[b]New Cron Job[/b]\n")
+            
+            with Horizontal(id="form-and-help"):
+                with Vertical(id="form-area"):
+                    yield Label("Cron Schedule:")
+                    yield Input(id="schedule-input", placeholder="e.g. 0 4 * * *, @daily")
+                    
+                    with Horizontal(id="quick-actions"):
+                        yield Button("@hourly", id="preset-hourly", classes="preset-btn")
+                        yield Button("@daily", id="preset-daily", classes="preset-btn")
+                        yield Button("@weekly", id="preset-weekly", classes="preset-btn")
+                        yield Button("*/5 * * * *", id="preset-5m", classes="preset-btn")
+                    
+                    yield Label("Command to execute:")
+                    yield Input(id="cmd-input", placeholder="/path/to/script.sh")
+                    
+                    with Horizontal(classes="buttons"):
+                        yield Button("Save", variant="success", id="btn-save")
+                        yield Button("Cancel", variant="primary", id="btn-cancel")
+                        
+                with Vertical(id="help-area"):
+                    cheatsheet = (
+                        "[b]Cron Format:[/b]\n"
+                        "[cyan]* * * * *[/cyan]\n"
+                        "┬ ┬ ┬ ┬ ┬\n"
+                        "│ │ │ │ └ Day of week (0-7, 0=Sun)\n"
+                        "│ │ │ └── Month (1-12)\n"
+                        "│ │ └──── Day of month (1-31)\n"
+                        "│ └────── Hour (0-23)\n"
+                        "└──────── Minute (0-59)\n\n"
+                        "[b]Shortcuts:[/b]\n"
+                        "[cyan]@reboot[/cyan]  : Run at startup\n"
+                        "[cyan]@hourly[/cyan]  : Run every hour\n"
+                        "[cyan]@daily[/cyan]   : Run every day at midnight\n"
+                        "[cyan]@weekly[/cyan]  : Run every Sunday\n"
+                        "[cyan]@monthly[/cyan] : Run once a month\n"
+                    )
+                    yield Static(cheatsheet)
                 
     def on_mount(self) -> None:
         self.query_one("#schedule-input").focus()
@@ -200,6 +261,19 @@ class NewJobModal(ModalScreen[tuple]):
                 self.dismiss((schedule, cmd))
             else:
                 self.app.notify("Schedule and Command cannot be empty.", title="Error", severity="error")
+        elif event.button.id == "btn-cancel":
+            self.dismiss(None)
+        elif event.button.id and event.button.id.startswith("preset-"):
+            sched_input = self.query_one("#schedule-input", Input)
+            if event.button.id == "preset-hourly":
+                sched_input.value = "@hourly"
+            elif event.button.id == "preset-daily":
+                sched_input.value = "@daily"
+            elif event.button.id == "preset-weekly":
+                sched_input.value = "@weekly"
+            elif event.button.id == "preset-5m":
+                sched_input.value = "*/5 * * * *"
+            self.query_one("#cmd-input").focus()
         else:
             self.dismiss(None)
 

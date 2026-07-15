@@ -8,7 +8,7 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual import on
 from textual.widgets import Header, Footer, DataTable, Static, Input, Button, Label
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, Container
 from textual.binding import Binding
 from textual.screen import ModalScreen
 from textual.command import Provider, Hit
@@ -278,14 +278,14 @@ class DashboardCommandProvider(Provider):
         
         # Add layout options
         layouts = [
-            ("Layout: 50/50 Split", 50),
-            ("Layout: 60/40 Split", 60),
-            ("Layout: 70/30 Split", 70),
-            ("Layout: 80/20 Split", 80),
+            ("Layout: Side-by-Side (List Left)", "horizontal", False),
+            ("Layout: Side-by-Side (List Right)", "horizontal", True),
+            ("Layout: Stacked (List Top)", "vertical", False),
+            ("Layout: Stacked (List Bottom)", "vertical", True),
         ]
-        for layout_name, left_pct in layouts:
-            action = lambda pct=left_pct: app.action_set_layout(pct)
-            commands.append((layout_name, f"Set the left panel width to {left_pct}%", action))
+        for layout_name, orientation, swapped in layouts:
+            action = lambda o=orientation, s=swapped: app.action_set_layout(o, s)
+            commands.append((layout_name, f"Switch to {layout_name}", action))
         
         for name, description, action in commands:
             score = matcher.match(name)
@@ -299,11 +299,18 @@ class CronDashboard(App):
     
     show_ai_badges = True
     confirm_force_run = True
-    left_panel_width = 60
+    left_panel_size = 60
+    is_horizontal = True
+    is_swapped = False
 
     CSS = """
     Screen {
         background: $surface;
+    }
+    #app-container {
+        layout: horizontal;
+        width: 100%;
+        height: 100%;
     }
     #left-panel {
         width: 60%;
@@ -349,7 +356,7 @@ class CronDashboard(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with Horizontal():
+        with Container(id="app-container"):
             with Vertical(id="left-panel"):
                 yield Input(id="search-input", placeholder="Filter jobs (/)")
                 yield DataTable(id="job-table", cursor_type="row")
@@ -428,24 +435,45 @@ class CronDashboard(App):
     def action_show_resize_help(self) -> None:
         self.push_screen(HelpModal())
 
-    def action_set_layout(self, left_percent: int) -> None:
-        self.left_panel_width = left_percent
+    def action_set_layout(self, orientation: str, swapped: bool) -> None:
+        self.is_horizontal = (orientation == "horizontal")
+        self.is_swapped = swapped
+        
+        container = self.query_one("#app-container")
+        container.styles.layout = orientation
+        
+        left = self.query_one("#left-panel")
+        right = self.query_one("#main-panel")
+        
+        if swapped:
+            left.move_after(right)
+        else:
+            left.move_before(right)
+            
         self.apply_layout()
-        self.notify(f"Layout set to {left_percent}/{100-left_percent}")
+        self.notify(f"Layout changed.")
 
     def action_resize_left(self) -> None:
-        self.left_panel_width = max(10, self.left_panel_width - 5)
+        self.left_panel_size = max(10, self.left_panel_size - 5)
         self.apply_layout()
 
     def action_resize_right(self) -> None:
-        self.left_panel_width = min(90, self.left_panel_width + 5)
+        self.left_panel_size = min(90, self.left_panel_size + 5)
         self.apply_layout()
 
     def apply_layout(self) -> None:
         left = self.query_one("#left-panel")
         right = self.query_one("#main-panel")
-        left.styles.width = f"{self.left_panel_width}%"
-        right.styles.width = f"{100 - self.left_panel_width}%"
+        if self.is_horizontal:
+            left.styles.width = f"{self.left_panel_size}%"
+            left.styles.height = "100%"
+            right.styles.width = f"{100 - self.left_panel_size}%"
+            right.styles.height = "100%"
+        else:
+            left.styles.width = "100%"
+            left.styles.height = f"{self.left_panel_size}%"
+            right.styles.width = "100%"
+            right.styles.height = f"{100 - self.left_panel_size}%"
 
     def action_focus_search(self) -> None:
         """Focus the search input when / is pressed."""

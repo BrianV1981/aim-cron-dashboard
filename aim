@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Local A.I.M. CLI entrypoint for this host project
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
+exec "$ROOT/aim-agy_os/venv/bin/python3" "$ROOT/aim-agy_os/.aim_core/aim_cli.py" "$@"

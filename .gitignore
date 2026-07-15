@@ -1,0 +1,9 @@
+# --- A.I.M. OS Exoskeleton ---
+.gemini/
+AGENTS.md
+aim-agy_os/
+aim-agy_os_docs/
+.grok/
+.opencode/
+memory-wiki/
+workspace/

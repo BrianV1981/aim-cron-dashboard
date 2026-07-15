@@ -112,13 +112,14 @@ class NewJobModal(ModalScreen[tuple]):
     CSS = """
     NewJobModal {
         align: center middle;
+        background: $background 50%;
     }
     #new-job-dialog {
         width: 60;
         height: auto;
         padding: 1 2;
         background: $surface;
-        border: thick $primary 80%;
+        border: round $primary;
     }
     .buttons {
         width: 100%;
@@ -173,13 +174,14 @@ class ConfirmActionModal(ModalScreen[bool]):
     CSS = """
     ConfirmActionModal {
         align: center middle;
+        background: $background 50%;
     }
     #confirm-action-dialog {
         width: 50;
         height: auto;
         padding: 1 2;
         background: $surface;
-        border: thick $primary 80%;
+        border: round $primary;
     }
     .buttons {
         width: 100%;
@@ -221,14 +223,23 @@ class CronDashboard(App):
     }
     #left-panel {
         width: 60%;
-        border-right: solid $primary;
+        border: round $primary;
         height: 100%;
+        margin: 1;
+    }
+    #left-panel:focus-within {
+        border: round $accent;
     }
     #main-panel {
         width: 40%;
+        border: round $primary;
         height: 100%;
         padding: 1 2;
+        margin: 1 1 1 0;
         overflow-y: scroll;
+    }
+    #main-panel:focus-within {
+        border: round $accent;
     }
     #preview-area {
         width: 100%;

@@ -1,13 +1,13 @@
 # A.I.M. Cron Dashboard: Roadmap
 
 **ATTENTION INCOMING AGENT:** 
-You are building `aim-cron-dashboard`. This is a "sister project" to the Operator's existing tool, `aim-tmux-dashboard` (located at `/home/kingb/aim-tmux-dashboard`). 
+You are building `aim-cron-dashboard`. This is a "sister project" to the Operator's existing tool, `aim-tmux-dashboard` (located at `~/aim-tmux-dashboard`). 
 **DO NOT build a UI from scratch.** Your very first action must be to copy the Textual UI shell, CSS, and aesthetic design from `aim-tmux-dashboard`. We want both tools to feel like identical twin cockpits in the A.I.M. ecosystem.
 
 ---
 
 ## Phase 1: The UI Shell Clone (MVP Foundation)
-1. **Scaffold the Repo:** Copy `bin/dashboard.py` and the surrounding package structure from `/home/kingb/aim-tmux-dashboard`.
+1. **Scaffold the Repo:** Copy `bin/dashboard.py` and the surrounding package structure from `~/aim-tmux-dashboard`.
 2. **Rip and Replace:** Delete the `TmuxManager` class. Delete the tree view that renders tmux sessions.
 3. **The Base UI:** Replace the left tree with a `DataTable` or `ListView` designed to hold cronjobs. Keep the cyan `[A.I.]` color palette and dark mode aesthetics.
 

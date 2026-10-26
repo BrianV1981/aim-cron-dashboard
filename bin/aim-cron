@@ -9,7 +9,7 @@ PROJECT_ROOT="$(dirname "$DIR")"
 PY="$PROJECT_ROOT/venv/bin/python"
 if [[ ! -x "$PY" ]]; then
     echo "Error: Python virtual environment not found or not executable." >&2
-    echo "Please run: ./scripts/setup.sh" >&2
+    echo "Please run: ./install.sh" >&2
     exit 1
 fi
 

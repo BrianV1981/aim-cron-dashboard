@@ -63,6 +63,135 @@ class HelpModal(ModalScreen):
 class CronManager:
     """Wrapper for crontab commands."""
 
+    SPECIAL_SCHEDULES = {
+        "@reboot": "At system startup (reboot)",
+        "@hourly": "Every hour (at minute 0)",
+        "@midnight": "Every day at midnight (00:00)",
+        "@daily": "Every day at midnight (00:00)",
+        "@weekly": "Every Sunday at midnight (00:00)",
+        "@monthly": "On day 1 of the month at midnight",
+        "@yearly": "On January 1 at midnight",
+        "@annually": "On January 1 at midnight",
+    }
+
+    MONTH_NAMES = {
+        "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+        "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+    }
+
+    DOW_NAMES = {
+        "SUN": 0, "MON": 1, "TUE": 2, "WED": 3, "THU": 4, "FRI": 5, "SAT": 6,
+    }
+
+    ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*=")
+
+    @classmethod
+    def _parse_field_value(cls, token: str, min_val: int, max_val: int, names: dict[str, int] | None) -> int | None:
+        upper = token.upper()
+        if names and upper in names:
+            return names[upper]
+        if re.fullmatch(r"\d+", token):
+            val = int(token)
+            if min_val <= val <= max_val:
+                return val
+        return None
+
+    @classmethod
+    def _validate_cron_field(cls, field: str, min_val: int, max_val: int, names: dict[str, int] | None = None) -> bool:
+        if not field:
+            return False
+        for part in field.split(","):
+            if not part:
+                return False
+            if "/" in part:
+                range_part, step_part = part.split("/", 1)
+                if not re.fullmatch(r"\d+", step_part):
+                    return False
+                step = int(step_part)
+                if step <= 0 or step > (max_val - min_val + 1):
+                    return False
+            else:
+                range_part = part
+
+            if range_part == "*":
+                continue
+            elif "-" in range_part:
+                bounds = range_part.split("-", 1)
+                if len(bounds) != 2:
+                    return False
+                start = cls._parse_field_value(bounds[0], min_val, max_val, names)
+                end = cls._parse_field_value(bounds[1], min_val, max_val, names)
+                if start is None or end is None or start > end:
+                    return False
+            else:
+                val = cls._parse_field_value(range_part, min_val, max_val, names)
+                if val is None:
+                    return False
+        return True
+
+    @classmethod
+    def validate_schedule(cls, schedule: str) -> tuple[bool, str]:
+        """Validates a 5-field cron schedule or @shortcut nickname."""
+        sched = schedule.strip()
+        if not sched:
+            return False, "Schedule cannot be empty."
+
+        if sched.startswith("@"):
+            if sched.lower() in cls.SPECIAL_SCHEDULES:
+                return True, ""
+            valid_shortcuts = ", ".join(cls.SPECIAL_SCHEDULES.keys())
+            return False, f"Unknown shortcut '{sched}'. Valid shortcuts: {valid_shortcuts}"
+
+        fields = sched.split()
+        if len(fields) != 5:
+            return False, f"Cron schedule must have 5 fields (minute hour day month weekday) or a valid @shortcut, got {len(fields)}."
+
+        specs = [
+            ("minute (0-59)", fields[0], 0, 59, None),
+            ("hour (0-23)", fields[1], 0, 23, None),
+            ("day of month (1-31)", fields[2], 1, 31, None),
+            ("month (1-12 or JAN-DEC)", fields[3], 1, 12, cls.MONTH_NAMES),
+            ("day of week (0-7 or SUN-SAT)", fields[4], 0, 7, cls.DOW_NAMES),
+        ]
+        for label, value, min_v, max_v, name_map in specs:
+            if not cls._validate_cron_field(value, min_v, max_v, name_map):
+                return False, f"Invalid {label} field: '{value}'."
+
+        return True, ""
+
+    @classmethod
+    def describe_schedule(cls, schedule: str) -> str:
+        sched = schedule.strip()
+        if sched.lower() in cls.SPECIAL_SCHEDULES:
+            return cls.SPECIAL_SCHEDULES[sched.lower()]
+        try:
+            return cron_descriptor.get_description(sched)
+        except Exception:
+            return sched
+
+    @classmethod
+    def _parse_cron_line(cls, active_line: str) -> tuple[str, str] | None:
+        if not active_line or cls.ENV_ASSIGNMENT_RE.match(active_line):
+            return None
+        if active_line.startswith("@"):
+            parts = active_line.split(maxsplit=1)
+            if len(parts) < 2:
+                return None
+            schedule, cmd = parts[0], parts[1].strip()
+        else:
+            parts = active_line.split(maxsplit=5)
+            if len(parts) < 6:
+                return None
+            schedule = " ".join(parts[:5])
+            cmd = parts[5].strip()
+
+        if not cmd:
+            return None
+        is_valid, _ = cls.validate_schedule(schedule)
+        if not is_valid:
+            return None
+        return schedule, cmd
+
     @staticmethod
     def get_crontab():
         """Returns a list of dicts representing cron jobs."""
@@ -76,30 +205,26 @@ class CronManager:
                 line = line.strip()
                 if not line:
                     continue
-                
-                # Check if paused
+
                 is_paused = line.startswith('#')
                 active_line = line.lstrip('#').strip()
-                
-                parts = active_line.split(maxsplit=5)
-                if len(parts) >= 6:
-                    schedule = " ".join(parts[:5])
-                    cmd = parts[5]
-                    try:
-                        human_schedule = cron_descriptor.get_description(schedule)
-                    except Exception:
-                        human_schedule = schedule
-                        
-                    if is_paused:
-                        human_schedule = f"[PAUSED] {human_schedule}"
-                        
-                    jobs.append({
-                        "raw_line": line,
-                        "raw_schedule": schedule,
-                        "human_schedule": human_schedule,
-                        "cmd": cmd,
-                        "is_paused": is_paused
-                    })
+
+                parsed = CronManager._parse_cron_line(active_line)
+                if parsed is None:
+                    continue
+
+                schedule, cmd = parsed
+                human_schedule = CronManager.describe_schedule(schedule)
+                if is_paused:
+                    human_schedule = f"[PAUSED] {human_schedule}"
+
+                jobs.append({
+                    "raw_line": line,
+                    "raw_schedule": schedule,
+                    "human_schedule": human_schedule,
+                    "cmd": cmd,
+                    "is_paused": is_paused
+                })
             return jobs
         except subprocess.CalledProcessError:
             return []
@@ -127,8 +252,11 @@ class CronManager:
         
     @staticmethod
     def add_job(schedule: str, cmd: str) -> None:
+        is_valid, err = CronManager.validate_schedule(schedule)
+        if not is_valid:
+            raise ValueError(err)
         current_lines = CronManager.get_crontab_raw().splitlines()
-        current_lines.append(f"{schedule} {cmd}")
+        current_lines.append(f"{schedule.strip()} {cmd.strip()}")
         CronManager.save_crontab(current_lines)
 
     @staticmethod
@@ -263,10 +391,14 @@ class NewJobModal(ModalScreen[tuple]):
         if event.button.id == "btn-save":
             schedule = self.query_one("#schedule-input", Input).value.strip()
             cmd = self.query_one("#cmd-input", Input).value.strip()
-            if schedule and cmd:
-                self.dismiss((schedule, cmd))
-            else:
+            if not schedule or not cmd:
                 self.app.notify("Schedule and Command cannot be empty.", title="Error", severity="error")
+                return
+            is_valid, err = CronManager.validate_schedule(schedule)
+            if not is_valid:
+                self.app.notify(err, title="Invalid Cron Schedule", severity="error")
+                return
+            self.dismiss((schedule, cmd))
         elif event.button.id == "btn-cancel":
             self.dismiss(None)
         elif event.button.id and event.button.id.startswith("preset-"):
@@ -626,9 +758,12 @@ class CronDashboard(App):
         def check_new_job(result: tuple | None) -> None:
             if result is not None:
                 schedule, cmd = result
-                CronManager.add_job(schedule, cmd)
-                self.refresh_jobs()
-                self.notify("Job added.", title="Success")
+                try:
+                    CronManager.add_job(schedule, cmd)
+                    self.refresh_jobs()
+                    self.notify("Job added.", title="Success")
+                except (ValueError, subprocess.CalledProcessError) as err:
+                    self.notify(f"Failed to save job: {err}", title="Error", severity="error")
         self.push_screen(NewJobModal(), check_new_job)
 
     def action_delete_job(self) -> None:

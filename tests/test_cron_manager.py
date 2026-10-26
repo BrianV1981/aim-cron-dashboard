@@ -117,5 +117,91 @@ class TestCronManagerIssue9(unittest.TestCase):
             mock_run.assert_not_called()
 
 
+class TestCronManagerIssue11(unittest.TestCase):
+    def test_get_crontab_records_line_index(self):
+        sample_crontab = "\n".join([
+            "# header comment",
+            "0 1 * * * /bin/job1",
+            "",
+            "# 0 2 * * * /bin/job2",
+        ])
+        mock_result = MagicMock(stdout=sample_crontab, returncode=0)
+        with patch("subprocess.run", return_value=mock_result):
+            jobs = CronManager.get_crontab()
+
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual(jobs[0]["line_index"], 1)
+        self.assertEqual(jobs[1]["line_index"], 3)
+
+    def test_edit_job_updates_only_targeted_line_index_and_preserves_paused_state(self):
+        sample_crontab = "\n".join([
+            "# header",
+            "0 4 * * * /bin/same_cmd",
+            "# @daily /bin/paused_cmd",
+            "0 4 * * * /bin/same_cmd",
+        ])
+        with patch.object(CronManager, "get_crontab_raw", return_value=sample_crontab), \
+             patch.object(CronManager, "save_crontab") as mock_save:
+            # Edit the second identical job at line_index=3
+            CronManager.edit_job(
+                target_raw_line="0 4 * * * /bin/same_cmd",
+                new_schedule="*/10 * * * *",
+                new_cmd="/bin/updated_cmd --fast",
+                line_index=3,
+                is_paused=False,
+            )
+            mock_save.assert_called_once_with([
+                "# header",
+                "0 4 * * * /bin/same_cmd",
+                "# @daily /bin/paused_cmd",
+                "*/10 * * * * /bin/updated_cmd --fast",
+            ])
+
+        with patch.object(CronManager, "get_crontab_raw", return_value=sample_crontab), \
+             patch.object(CronManager, "save_crontab") as mock_save_paused:
+            # Edit the paused job at line_index=2 and keep it paused
+            CronManager.edit_job(
+                target_raw_line="# @daily /bin/paused_cmd",
+                new_schedule="@weekly",
+                new_cmd="/bin/paused_weekly",
+                line_index=2,
+                is_paused=True,
+            )
+            mock_save_paused.assert_called_once_with([
+                "# header",
+                "0 4 * * * /bin/same_cmd",
+                "# @weekly /bin/paused_weekly",
+                "0 4 * * * /bin/same_cmd",
+            ])
+
+    def test_delete_and_toggle_job_respect_line_index_on_duplicate_lines(self):
+        sample_crontab = "\n".join([
+            "0 4 * * * /bin/dup_cmd",
+            "0 4 * * * /bin/dup_cmd",
+        ])
+        with patch.object(CronManager, "get_crontab_raw", return_value=sample_crontab), \
+             patch.object(CronManager, "save_crontab") as mock_save_del:
+            CronManager.delete_job("0 4 * * * /bin/dup_cmd", line_index=1)
+            mock_save_del.assert_called_once_with(["0 4 * * * /bin/dup_cmd"])
+
+        with patch.object(CronManager, "get_crontab_raw", return_value=sample_crontab), \
+             patch.object(CronManager, "save_crontab") as mock_save_tog:
+            CronManager.toggle_job("0 4 * * * /bin/dup_cmd", line_index=0)
+            mock_save_tog.assert_called_once_with([
+                "# 0 4 * * * /bin/dup_cmd",
+                "0 4 * * * /bin/dup_cmd",
+            ])
+
+    def test_new_job_modal_stores_initial_values_for_editing(self):
+        modal = dashboard.NewJobModal(
+            initial_schedule="@daily",
+            initial_cmd="/usr/local/bin/backup.sh",
+            title="Edit Cron Job",
+        )
+        self.assertEqual(modal.initial_schedule, "@daily")
+        self.assertEqual(modal.initial_cmd, "/usr/local/bin/backup.sh")
+        self.assertEqual(modal.dialog_title, "Edit Cron Job")
+
+
 if __name__ == "__main__":
     unittest.main()

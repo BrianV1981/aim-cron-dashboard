@@ -201,8 +201,8 @@ class CronManager:
                 capture_output=True, text=True, check=True
             )
             jobs = []
-            for line in result.stdout.split('\n'):
-                line = line.strip()
+            for line_index, raw_line in enumerate(result.stdout.splitlines()):
+                line = raw_line.strip()
                 if not line:
                     continue
 
@@ -223,7 +223,8 @@ class CronManager:
                     "raw_schedule": schedule,
                     "human_schedule": human_schedule,
                     "cmd": cmd,
-                    "is_paused": is_paused
+                    "is_paused": is_paused,
+                    "line_index": line_index,
                 })
             return jobs
         except subprocess.CalledProcessError:
@@ -260,28 +261,87 @@ class CronManager:
         CronManager.save_crontab(current_lines)
 
     @staticmethod
-    def delete_job(target_raw_line: str) -> None:
+    def edit_job(
+        target_raw_line: str,
+        new_schedule: str,
+        new_cmd: str,
+        line_index: int | None = None,
+        is_paused: bool = False,
+    ) -> None:
+        is_valid, err = CronManager.validate_schedule(new_schedule)
+        if not is_valid:
+            raise ValueError(err)
+        prefix = "# " if is_paused else ""
+        replacement = f"{prefix}{new_schedule.strip()} {new_cmd.strip()}"
         current_lines = CronManager.get_crontab_raw().splitlines()
-        new_lines = [line for line in current_lines if line.strip() != target_raw_line.strip()]
+        if (
+            line_index is not None
+            and 0 <= line_index < len(current_lines)
+            and current_lines[line_index].strip() == target_raw_line.strip()
+        ):
+            current_lines[line_index] = replacement
+        else:
+            for idx, line in enumerate(current_lines):
+                if line.strip() == target_raw_line.strip():
+                    current_lines[idx] = replacement
+                    break
+        CronManager.save_crontab(current_lines)
+
+    @staticmethod
+    def delete_job(target_raw_line: str, line_index: int | None = None) -> None:
+        current_lines = CronManager.get_crontab_raw().splitlines()
+        if (
+            line_index is not None
+            and 0 <= line_index < len(current_lines)
+            and current_lines[line_index].strip() == target_raw_line.strip()
+        ):
+            new_lines = current_lines[:line_index] + current_lines[line_index + 1:]
+        else:
+            new_lines = [line for line in current_lines if line.strip() != target_raw_line.strip()]
         CronManager.save_crontab(new_lines)
             
     @staticmethod
-    def toggle_job(target_raw_line: str) -> None:
+    def toggle_job(target_raw_line: str, line_index: int | None = None) -> None:
         current_lines = CronManager.get_crontab_raw().splitlines()
+
+        def _toggle_line(line: str) -> str:
+            if line.strip().startswith('#'):
+                return line.strip().lstrip('#').lstrip()
+            return f"# {line.strip()}"
+
+        if (
+            line_index is not None
+            and 0 <= line_index < len(current_lines)
+            and current_lines[line_index].strip() == target_raw_line.strip()
+        ):
+            current_lines[line_index] = _toggle_line(current_lines[line_index])
+            CronManager.save_crontab(current_lines)
+            return
+
         new_lines = []
         for line in current_lines:
             if line.strip() == target_raw_line.strip():
-                if line.startswith('#'):
-                    new_lines.append(line.lstrip('#').lstrip())
-                else:
-                    new_lines.append(f"# {line}")
+                new_lines.append(_toggle_line(line))
             else:
                 new_lines.append(line)
         CronManager.save_crontab(new_lines)
 
 
 class NewJobModal(ModalScreen[tuple]):
-    """Modal dialog to add a new cron job."""
+    """Modal dialog to add or edit a cron job."""
+
+    def __init__(
+        self,
+        initial_schedule: str = "",
+        initial_cmd: str = "",
+        title: str = "New Cron Job",
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.initial_schedule = initial_schedule
+        self.initial_cmd = initial_cmd
+        self.dialog_title = title
     
     CSS = """
     NewJobModal {
@@ -339,12 +399,12 @@ class NewJobModal(ModalScreen[tuple]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="new-job-dialog"):
-            yield Label("[b]New Cron Job[/b]\n")
+            yield Label(f"[b]{self.dialog_title}[/b]\n")
             
             with Horizontal(id="form-and-help"):
                 with Vertical(id="form-area"):
                     yield Label("Cron Schedule:")
-                    yield Input(id="schedule-input", placeholder="e.g. 0 4 * * *, @daily")
+                    yield Input(value=self.initial_schedule, id="schedule-input", placeholder="e.g. 0 4 * * *, @daily")
                     
                     with Horizontal(id="quick-actions"):
                         yield Button("@hourly", id="preset-hourly", classes="preset-btn")
@@ -354,7 +414,7 @@ class NewJobModal(ModalScreen[tuple]):
                         yield Button("*/5 * * * *", id="preset-5m", classes="preset-btn")
                     
                     yield Label("Command to execute:")
-                    yield Input(id="cmd-input", placeholder="/path/to/script.sh")
+                    yield Input(value=self.initial_cmd, id="cmd-input", placeholder="/path/to/script.sh")
                     
                     with Horizontal(classes="buttons"):
                         yield Button("Save", variant="success", id="btn-save")
@@ -485,6 +545,7 @@ class CronCommandProvider(Provider):
         app = self.app
         commands = [
             ("New Job", "Create a new cronjob", app.action_new_job),
+            ("Edit Job", "Edit the selected cronjob in place", app.action_edit_job),
             ("Refresh Table", "Reload the cronjob list from system", app.action_refresh),
             ("Force Run Job", "Execute the selected job in background", app.action_force_run),
             ("Delete Job", "Delete the selected job", app.action_delete_job),
@@ -616,6 +677,7 @@ class CronDashboard(App):
         Binding("r", "refresh", "Refresh"),
         Binding("/", "focus_search", "Search"),
         Binding("n", "new_job", "New Job"),
+        Binding("e", "edit_job", "Edit Job"),
         Binding("x", "delete_job", "Delete"),
         Binding("p", "toggle_job", "Pause/Resume"),
         Binding("ctrl+r", "force_run", "Force Run"),
@@ -766,6 +828,39 @@ class CronDashboard(App):
                     self.notify(f"Failed to save job: {err}", title="Error", severity="error")
         self.push_screen(NewJobModal(), check_new_job)
 
+    def action_edit_job(self) -> None:
+        table = self.query_one("#job-table", DataTable)
+        if table.cursor_row is not None:
+            try:
+                row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+                job = self.jobs[int(row_key)]
+
+                def check_edit_job(result: tuple | None) -> None:
+                    if result is not None:
+                        schedule, cmd = result
+                        try:
+                            CronManager.edit_job(
+                                job["raw_line"],
+                                schedule,
+                                cmd,
+                                line_index=job.get("line_index"),
+                                is_paused=job["is_paused"],
+                            )
+                            self.refresh_jobs()
+                            self.update_preview()
+                            self.notify("Job updated.", title="Success")
+                        except (ValueError, subprocess.CalledProcessError) as err:
+                            self.notify(f"Failed to update job: {err}", title="Error", severity="error")
+
+                modal = NewJobModal(
+                    initial_schedule=job["raw_schedule"],
+                    initial_cmd=job["cmd"],
+                    title="Edit Cron Job",
+                )
+                self.push_screen(modal, check_edit_job)
+            except Exception:
+                self.notify("Error selecting job to edit.", severity="error")
+
     def action_delete_job(self) -> None:
         table = self.query_one("#job-table", DataTable)
         if table.cursor_row is not None:
@@ -775,9 +870,13 @@ class CronDashboard(App):
                 
                 def check_delete(confirm: bool) -> None:
                     if confirm:
-                        CronManager.delete_job(job["raw_line"])
-                        self.refresh_jobs()
-                        self.notify("Job deleted.", title="Success")
+                        try:
+                            CronManager.delete_job(job["raw_line"], line_index=job.get("line_index"))
+                            self.refresh_jobs()
+                            self.update_preview()
+                            self.notify("Job deleted.", title="Success")
+                        except subprocess.CalledProcessError as err:
+                            self.notify(f"Failed to delete job: {err}", title="Error", severity="error")
                         
                 modal = ConfirmActionModal(
                     title="Delete Job",
@@ -827,9 +926,13 @@ class CronDashboard(App):
                 
                 def check_toggle(confirm: bool) -> None:
                     if confirm:
-                        CronManager.toggle_job(job["raw_line"])
-                        self.refresh_jobs()
-                        self.notify(f"Job {action_str.lower()}d.", title="Success")
+                        try:
+                            CronManager.toggle_job(job["raw_line"], line_index=job.get("line_index"))
+                            self.refresh_jobs()
+                            self.update_preview()
+                            self.notify(f"Job {action_str.lower()}d.", title="Success")
+                        except subprocess.CalledProcessError as err:
+                            self.notify(f"Failed to {action_str.lower()} job: {err}", title="Error", severity="error")
                         
                 modal = ConfirmActionModal(
                     title=f"{action_str} Job",

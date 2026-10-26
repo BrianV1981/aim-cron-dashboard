@@ -24,33 +24,23 @@ When `self.show_ai_badges` is `True` (default, toggleable via `ctrl+p -> Dashboa
 2. **Known AI CLI Vessels:** If any token in `["agy", "aider", "claude", "grok", "gpt", "agent", "opencode", "gemini", "codex", "antigravity"]` appears in `cmd.lower()`, prefixes:
    `[bold cyan][A.I.][/bold cyan] `
 
-## 3. Detached Force Run (`action_force_run`)
+## 3. Detached Force Run & Output Capture (`action_force_run` / `execute_command_capture`)
 - Triggered via `ctrl+r` or `ctrl+p -> Cron Actions... -> Force Run Job`.
 - Guarded by `ConfirmActionModal` when `self.confirm_force_run` is `True` (default).
-- Launches the command asynchronously in a new process session with output redirected to `/dev/null` so the TUI never blocks:
-  ```python
-  subprocess.Popen(
-      cmd,
-      shell=True,
-      start_new_session=True,
-      stdout=subprocess.DEVNULL,
-      stderr=subprocess.DEVNULL,
-  )
-  ```
+- Immediately records `status="RUNNING"` in `self.run_history[cmd]` (displaying `[RUNNING]` in `#job-table` and `#preview-area`) and spawns a daemon worker thread calling `CronManager.execute_command_capture(cmd)`:
+  - Runs `subprocess.Popen(cmd, shell=True, start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)`.
+  - On completion, updates `self.run_history[cmd]` with `status` (`"OK"` or `"FAIL"`), `returncode`, `timestamp`, and captured `output`, and refreshes the UI via `self.call_from_thread(self._on_force_run_complete, cmd, result)`.
 
-## 4. Audited Edge Cases & Technical Debt (Candidates for Next Issues)
-1. **`@` Nickname Parsing Bug in `CronManager.get_crontab()` (`bin/dashboard.py:84-87`):**
-   - `NewJobModal` offers preset buttons and cheatsheet entries for `@hourly`, `@midnight`, `@daily`, `@weekly`, `@monthly`, and `@reboot`.
-   - However, `CronManager.get_crontab()` parses lines using `parts = active_line.split(maxsplit=5)` and requires `len(parts) >= 6`, assuming all schedules have 5 whitespace-separated fields (`m h dom mon dow`).
-   - If a user saves `@daily /path/to/script.sh` (only 2 whitespace-separated tokens), `len(parts)` is `2 < 6` and the job is silently omitted from the UI table. If the command itself has 5+ spaces, the first 4 tokens of the command are erroneously absorbed into `schedule`.
-   - **Fix Pattern:** Check if `active_line.startswith("@")`; if so, split with `maxsplit=1` (`schedule, cmd = active_line.split(maxsplit=1)`), otherwise split with `maxsplit=5`. Also skip non-cron comment headers (lines starting with `#` whose uncommented body does not match a valid 5-field cron expression or `@` nickname, or environment variable assignments like `SHELL=/bin/bash`).
-2. **`install.sh` Entrypoint Symlink Drift (`install.sh:16`):**
-   - Commit `12a45ba` renamed `bin/aim-dash` to `bin/aim-cron`, and `README.md` documents `ln -sf $(pwd)/bin/aim-cron ~/.local/bin/aim-cron`.
-   - However, `install.sh` line 16 still runs `ln -sf "$DIR/bin/aim-dash" ~/.local/bin/aim-cron-dashboard`, creating a broken symlink.
-3. **`bin/aim-cron` Missing-Venv Error Message (`bin/aim-cron:12`):**
-   - If `venv/bin/python` is missing, `bin/aim-cron` prints `Please run: ./scripts/setup.sh` (inherited from `aim-tmux-dashboard`) instead of `./install.sh`.
-4. **Identical Duplicate Lines in `delete_job` / `toggle_job`:**
-   - Matching by `line.strip() == target_raw_line.strip()` will delete or toggle all identical copies if two identical cron lines exist in `crontab`.
+## 4. Persistent Settings & Schedule Validation (Issues `#9`–`#13` Resolved)
+1. **`@` Nickname & 5-Field Schedule Validation (`CronManager.validate_schedule` & `_parse_cron_line`):**
+   - Supports `@reboot`, `@hourly`, `@midnight`, `@daily`, `@weekly`, `@monthly`, `@yearly`, and `@annually` (`maxsplit=1`) as well as standard 5-field schedules (`minute`, `hour`, `day of month`, `month` `1-12`/`JAN-DEC`, `day of week` `0-7`/`SUN-SAT`).
+   - Automatically filters out non-cron prose comments (`# ...`) and environment variable assignments (`SHELL=`, `PATH=`, `MAILTO=`).
+2. **Line-Index Targeting (`line_index`):**
+   - `CronManager.get_crontab()` records the 0-based `line_index` from `crontab -l`, and `edit_job()`, `delete_job()`, and `toggle_job()` target that exact line index so duplicate cron lines do not collide.
+3. **Backup Discovery & Restore (`list_backups` & `restore_backup`):**
+   - Lists `crontab.bak.*` snapshots in `~/.local/state/aim-cron-dashboard/backups/` sorted newest-first and restores them via `RestoreBackupModal` (`u`).
+4. **Persistent UI Settings (`~/.config/aim-cron-dashboard/settings.json`):**
+   - `CronManager.load_settings()` and `save_settings()` persist `show_ai_badges`, `confirm_force_run`, `left_panel_size`, `is_horizontal`, and `is_swapped` across restarts.
 
 ## Related Pages
 - [Core TUI Architecture](architecture.md)

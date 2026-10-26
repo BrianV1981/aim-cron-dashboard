@@ -19,9 +19,11 @@
 | `r` | `action_refresh` | Reload system crontab into `#job-table` |
 | `/` | `action_focus_search` | Focus `#search-input` (`Enter` returns focus to `#job-table`) |
 | `n` | `action_new_job` | Open `NewJobModal` to create and append a cron job |
+| `e` | `action_edit_job` | Open `NewJobModal` pre-populated with the highlighted job to edit in place |
 | `x` | `action_delete_job` | Open `ConfirmActionModal` to remove the highlighted job |
 | `p` | `action_toggle_job` | Open `ConfirmActionModal` to comment (`# `) or uncomment the highlighted job |
-| `ctrl+r` | `action_force_run` | Execute the highlighted job's command immediately in a detached background session |
+| `u` | `action_restore_backup` | Open `RestoreBackupModal` to browse, preview, and restore a `crontab.bak.*` snapshot |
+| `ctrl+r` | `action_force_run` | Execute the highlighted job's command in a background session and capture `stdout`/`stderr` + exit code |
 | `[` / `]` | `action_resize_left` / `action_resize_right` | Shrink or expand `#left-panel` by 5% increments (clamped between `10%` and `90%`) |
 | `?` | `action_show_resize_help` | Open `HelpModal` explaining pane resizing and layout presets |
 | `ctrl+p` | Command Palette | Open Textual's system command palette with custom nested submenus |
@@ -29,12 +31,17 @@
 ## 4. Modal Screens
 1. **`NewJobModal` (`ModalScreen[tuple]`):**
    - Two-column horizontal layout (`#form-area` on the left, `#help-area` on the right).
+   - Accepts optional `initial_schedule`, `initial_cmd`, and `title` parameters so it serves both **New Job (`n`)** and **Edit Job (`e`)** workflows.
+   - Validates schedule syntax via `CronManager.validate_schedule(schedule)` before dismissing, displaying an inline error notification if invalid.
    - Quick-action preset buttons (`@hourly`, `@midnight`, `@daily`, `@weekly`, `*/5 * * * *`) populate `#schedule-input` and advance focus to `#cmd-input`.
    - Right-hand static cheatsheet displays the 5-field cron diagram (`minute`, `hour`, `day of month`, `month`, `day of week`), common examples, and `@` shortcuts.
-2. **`ConfirmActionModal` (`ModalScreen[bool]`):**
+2. **`RestoreBackupModal` (`ModalScreen[Path | None]`):**
+   - Split-pane dialog with `#backup-table` (`Timestamp`, `Jobs`, `File`) on the left and `#backup-preview` on the right showing the snapshot's raw crontab lines.
+   - Restores the selected snapshot via `CronManager.restore_backup()` while backing up the current state first.
+3. **`ConfirmActionModal` (`ModalScreen[bool]`):**
    - Reusable confirmation dialog parameterized by `title`, `prompt`, `action_name`, and button `variant` (`error`, `warning`, `success`).
    - Used for job deletion (`x`), pause/resume toggling (`p`), and force-run execution (`ctrl+r` when `confirm_force_run` is `True`).
-3. **`HelpModal` (`ModalScreen`):**
+4. **`HelpModal` (`ModalScreen`):**
    - Displays keyboard resizing instructions (`[` / `]`) and `ctrl+p` layout switching tips.
 
 ## 5. Nested Command Palette Architecture (Issues `#6` & `#7`)

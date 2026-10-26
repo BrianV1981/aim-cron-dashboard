@@ -1,8 +1,8 @@
 # aim-cron-dashboard — Engineering Handoff
 
-> **Updated:** 2026-10-25T21:11:00-04:00
+> **Updated:** 2026-10-26T16:04:00-04:00
 > **Updated by:** Antigravity (Session ID: `e7d7fdcd-0d1b-4374-9c48-59659534f1f2` / Gemini 4 Argon High)
-> **Priority Mission:** STANDBY / Awaiting Operator Directive — Phases 1–6 & Issues `#1`–`#8` complete; ready to fix audited `@shortcut` parser & `install.sh` symlink edge cases or implement v0.2+ features (In-Place Edit, Backup Restore Modal, Persistent Settings).
+> **Priority Mission:** STANDBY / Awaiting Operator Directive — All 13 Issues (`#1`–`#13`) resolved and promoted to `main` (`13/13` unit tests passing, `0` open issues).
 > **Operator:** Brian Vasquez (`@BrianV1981`)
 
 ---
@@ -17,7 +17,12 @@
 | `1eff1c6`–`0405961` | **Command Palette Submenus (`#7`):** Implemented native nested Command Palette providers (`CronCommandProvider`, `SettingCommandProvider`, `LayoutCommandProvider`) and bypassed empty-query `ValueError` | ✅ RESOLVED |
 | `12a45ba`–`759ed1f` | **Packaging & Docs:** Renamed launcher from `bin/aim-dash` to `bin/aim-cron`, updated `.gitignore`, and authored `README.md` | ✅ RESOLVED |
 | `efc65df` | **Public Shareability Scrub (`#8`):** Generalized hardcoded home path to `~/aim-tmux-dashboard` in `docs/ROADMAP.md` | ✅ RESOLVED |
-| `e7d7fdcd` | **Wiki & Handoff Bootstrap:** Replaced stale inherited `aim-joshua` wiki/handoff with dedicated `aim-cron-dashboard` `memory-wiki/` (`index.md`, `log.md`, 3 pages), symlinked `joshua_os/memory-wiki -> ../memory-wiki`, rebuilt LanceDB brain index, and authored this `HANDOFF.md` | ✅ RESOLVED |
+| `e7d7fdcd` (`aa61c67`) | **Wiki & Handoff Bootstrap:** Replaced stale inherited `aim-joshua` wiki/handoff with dedicated `aim-cron-dashboard` `memory-wiki/` (`index.md`, `log.md`, 3 pages), symlinked `joshua_os/memory-wiki -> ../memory-wiki`, rebuilt LanceDB brain index, and authored `HANDOFF.md` | ✅ RESOLVED |
+| `e7d7fdcd` (`c54af8e`) | **Issue `#9`:** Supported `@shortcut` 2-token schedules (`@reboot`, `@hourly`, `@midnight`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`), filtered prose comments & `ENV=val` lines, added `CronManager.validate_schedule()`, and added unit tests in `tests/test_cron_manager.py` | ✅ RESOLVED |
+| `e7d7fdcd` (`73c7f62`) | **Issue `#10`:** Updated `install.sh` symlink target to `bin/aim-cron -> ~/.local/bin/aim-cron`, fixed `bin/aim-cron` missing-venv setup hint to `./install.sh`, and added `tests/test_install_scripts.py` | ✅ RESOLVED |
+| `e7d7fdcd` (`e15e431`) | **Issue `#11`:** Added in-place job editing via hotkey `e` (`Edit Job`), pre-populated `NewJobModal`, and added 0-based `line_index` targeting in `CronManager` so duplicate cron lines do not collide | ✅ RESOLVED |
+| `e7d7fdcd` (`50aaa18`) | **Issue `#12`:** Added `RestoreBackupModal` (`u` hotkey & Command Palette), `CronManager.list_backups()`, and `CronManager.restore_backup()` to browse, preview, and restore `crontab.bak.*` snapshots | ✅ RESOLVED |
+| `e7d7fdcd` (`49ea549`) | **Issue `#13`:** Added persistent UI settings (`~/.config/aim-cron-dashboard/settings.json`) and live `Force Run` (`ctrl+r`) `stdout`/`stderr` + exit code capture (`[RUNNING]` / `[OK]` / `[FAIL]` badges) | ✅ RESOLVED |
 
 *(Keep clean and consolidated. Point to `memory-wiki/` and GitHub issues for deep history — do not re-audit.)*
 
@@ -39,33 +44,30 @@
 
 ---
 
-## 2. YOUR MISSION: BUG REMEDIATION OR v0.2+ FEATURE EXPANSION
-All 8 initial GitHub issues (`#1`–`#8`) are **CLOSED**. Await the Operator's explicit directive, or if instructed to harden the codebase and advance the roadmap, execute in the following priority order:
+## 2. YOUR MISSION: STANDBY / OPTIONAL v0.3+ FEATURE EXPANSION
+All 13 GitHub issues (`#1`–`#13`) are **CLOSED** and `13/13` unit tests pass on `main`. Await the Operator's explicit directive, or if instructed to expand v0.3+ capabilities, execute in the following priority order:
 
 ### Execution Queue (in order)
-#### 1️⃣ Fix `@shortcut` Parsing & Comment Header Filtering in `CronManager.get_crontab()`
-**Problem:** `NewJobModal` provides quick-action preset buttons for `@hourly`, `@midnight`, `@daily`, `@weekly`, and cheatsheet entries for `@reboot` / `@monthly`. However, `CronManager.get_crontab()` (`bin/dashboard.py:84-87`) splits lines via `parts = active_line.split(maxsplit=5)` and requires `len(parts) >= 6`. Because `@daily /path/to/script.sh` has only 2 tokens, `@`-scheduled jobs with fewer than 4 spaces in their command are silently dropped from the UI, and jobs with 4+ spaces have their command arguments absorbed into `raw_schedule`.
-**Fix:** Update `CronManager.get_crontab()` to detect `@` schedule nicknames (`active_line.startswith("@")`) and split with `maxsplit=1`, while validating standard 5-field schedules and ignoring non-cron comment prose or environment variable lines (`SHELL=`, `PATH=`, `MAILTO=`). Add `pytest` / `unittest` coverage for both 5-field and `@` nickname jobs.
-**Key files:** `~/aim-cron-dashboard/bin/dashboard.py`, `~/aim-cron-dashboard/tests/test_cron_manager.py`
+#### 1️⃣ Update `README.md` with New Hotkeys (`e`, `u`) & v0.2 Capabilities
+**Problem:** `README.md` was written prior to Issues `#9`–`#13` and does not yet list the new In-Place Edit (`e`), Backup Restore Modal (`u`), Persistent Settings (`~/.config/aim-cron-dashboard/settings.json`), or Force Run output/exit-status capture.
+**Fix:** If requested by the Operator, open a ticket and update `README.md` to document the full keyboard shortcut table (`n`, `e`, `x`, `p`, `u`, `ctrl+r`, `[`, `]`, `/`, `?`, `ctrl+p`) and backup/settings paths.
+**Key files:** `~/aim-cron-dashboard/README.md`
 
-#### 2️⃣ Fix `install.sh` Symlink Target & `bin/aim-cron` Error Hint
-**Problem:** Commit `12a45ba` renamed `bin/aim-dash` to `bin/aim-cron`, but `install.sh:16` still runs `ln -sf "$DIR/bin/aim-dash" ~/.local/bin/aim-cron-dashboard` (broken symlink target), and `bin/aim-cron:12` still tells users to run `./scripts/setup.sh` instead of `./install.sh`.
-**Fix:** Update `install.sh` to link `$DIR/bin/aim-cron` to `~/.local/bin/aim-cron` (matching `README.md:37`) and update `bin/aim-cron:12` to reference `./install.sh`.
-**Key files:** `~/aim-cron-dashboard/install.sh`, `~/aim-cron-dashboard/bin/aim-cron`
-
-#### 3️⃣ In-Place Job Editing (`e` Hotkey) & Backup Restore Modal (v0.2+ Roadmap)
-**Problem:** Users must currently delete (`x`) and recreate (`n`) a job to modify its schedule or command, and restoring a backup from `~/.local/state/aim-cron-dashboard/backups/` requires manual CLI intervention.
-**Fix:** Allow `NewJobModal` to accept optional `initial_schedule` and `initial_cmd` parameters for in-place editing (`e` hotkey + `CronManager.edit_job()`), and add a `RestoreBackupModal` accessible from `ctrl+p -> Cron Actions...`.
-**Key files:** `~/aim-cron-dashboard/bin/dashboard.py`, `~/aim-cron-dashboard/docs/AIM_CRON_FEATURE_AUDIT.md`
+#### 2️⃣ Optional Prune of Merged Remote Archive Branches
+**Problem:** Promotion created remote backup branches (`archive-fix/issue-9-*` through `archive-fix/issue-13-*` and `fix/issue-9` through `fix/issue-13`).
+**Fix:** With Operator approval, run `./aim prune-remote --confirm` to clean up merged remote `fix/issue-*` and `archive-fix/*` branches.
+**Key files:** `~/aim-cron-dashboard/aim`
 
 ---
 
 ## 3. DETAILED ANALYSIS / BREAKDOWN
-- **`CronManager` Architecture (`bin/dashboard.py:63-153`):**
+- **`CronManager` Architecture (`bin/dashboard.py`):**
   - Uses `subprocess.run(["crontab", "-l"])` for reading and `subprocess.run(["crontab", "-"], input=new_crontab)` for writing.
-  - Automatically writes timestamped backups (`crontab.bak.<YYYYMMDD_HHMMSS>`) to `~/.local/state/aim-cron-dashboard/backups/` inside `save_crontab()` before every write when the current crontab is non-empty.
-  - `delete_job()` and `toggle_job()` match lines by `line.strip() == target_raw_line.strip()`. Passing row index or occurrence index avoids mutating duplicate cron lines simultaneously.
-- **Command Palette Submenus (`bin/dashboard.py:345-437`):**
+  - Parses both standard 5-field schedules and `@shortcut` nicknames (`@reboot`, `@hourly`, `@midnight`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`), filters prose comments and `ENV=val` lines, and validates schedule bounds via `validate_schedule()`.
+  - Automatically writes timestamped backups (`crontab.bak.<YYYYMMDD_HHMMSS>`) to `~/.local/state/aim-cron-dashboard/backups/` before every write, and lists/restores them via `list_backups()` / `restore_backup()` (`RestoreBackupModal` bound to `u`).
+  - Tracks 0-based `line_index` on each job so `edit_job()`, `delete_job()`, and `toggle_job()` only mutate the targeted crontab line.
+  - Persists UI preferences (`show_ai_badges`, `confirm_force_run`, `left_panel_size`, `is_horizontal`, `is_swapped`) to `~/.config/aim-cron-dashboard/settings.json` and captures `Force Run` (`ctrl+r`) `stdout`/`stderr` + exit code via `execute_command_capture()`.
+- **Command Palette Submenus (`bin/dashboard.py`):**
   - `CronDashboard.get_system_commands()` yields 4-tuples `(title, help, callback, True)` that push nested `CommandPalette` screens for `CronCommandProvider`, `SettingCommandProvider`, and `LayoutCommandProvider`.
   - Every provider's `search(query)` yields `Hit(1.0, ...)` when `not query` to prevent Textual's fuzzy matcher from raising `ValueError` on empty input (`#7`).
 - **Local Working Tree Exoskeleton Files:**
@@ -98,21 +100,21 @@ All 8 initial GitHub issues (`#1`–`#8`) are **CLOSED**. Await the Operator's e
 ## 6. KEY PATHS
 - **TUI Application:** `~/aim-cron-dashboard/bin/dashboard.py`
 - **Shell Entrypoint:** `~/aim-cron-dashboard/bin/aim-cron`
+- **Unit Test Suite (`13/13` passing):** `~/aim-cron-dashboard/tests/test_cron_manager.py`, `~/aim-cron-dashboard/tests/test_install_scripts.py`
 - **Installer & Dependencies:** `~/aim-cron-dashboard/install.sh`, `~/aim-cron-dashboard/requirements.txt`
 - **Documentation & Roadmap:** `~/aim-cron-dashboard/README.md`, `~/aim-cron-dashboard/docs/ROADMAP.md`, `~/aim-cron-dashboard/docs/AIM_CRON_FEATURE_AUDIT.md`
 - **Persistent Memory Wiki:** `~/aim-cron-dashboard/memory-wiki/index.md`, `~/aim-cron-dashboard/memory-wiki/log.md`, `~/aim-cron-dashboard/memory-wiki/pages/`
 - **J.O.S.H.U.A. CLI & Brain:** `~/aim-cron-dashboard/aim`, `~/aim-cron-dashboard/AGENTS.md`, `~/aim-cron-dashboard/joshua_os/.aim_core/aim_cli.py`, `~/aim-cron-dashboard/joshua_os/memory_lance/`
-- **Runtime Crontab Backups:** `~/.local/state/aim-cron-dashboard/backups/`
+- **Runtime Crontab Backups & Settings:** `~/.local/state/aim-cron-dashboard/backups/`, `~/.config/aim-cron-dashboard/settings.json`
 
 ---
 
 ## 7. THE FULL PICTURE / WHAT COMES AFTER
 | Track | Target | Description | Status |
 |-------|--------|-------------|--------|
-| **Parser & Installer Fix** | `bin/dashboard.py`, `install.sh`, `bin/aim-cron` | Support `@daily`/`@reboot` 2-token schedules in `CronManager.get_crontab()` and fix `install.sh` symlink target | Audited, ready for ticket |
-| **In-Place Job Edit (`e`)** | `bin/dashboard.py` (`NewJobModal`, `CronManager`) | Edit existing cron schedule/command without delete+recreate | Candidate v0.2 feature |
-| **Backup Restore UI** | `bin/dashboard.py` | Browse and restore `crontab.bak.<timestamp>` snapshots from TUI | Candidate v0.2 feature |
-| **Persistent Preferences** | `bin/dashboard.py` | Save layout split, orientation, and badge/warning toggles to disk | Candidate v0.2 feature |
+| **Issues `#9`–`#13`** | `bin/dashboard.py`, `install.sh`, `bin/aim-cron`, `tests/` | `@shortcut` parser, schedule validation, installer fix, Edit (`e`), Restore Backup (`u`), persistent settings, Force Run output | ✅ SHIPPED |
+| **README Refresh** | `README.md` | Document new hotkeys (`e`, `u`) and persistent settings/backup paths | Candidate quick win |
+| **Remote Branch Hygiene** | `./aim prune-remote --confirm` | Prune merged `fix/issue-*` and `archive-fix/*` branches on `origin` | Ready (awaiting Operator approval) |
 
 ---
 
@@ -125,8 +127,6 @@ All 8 initial GitHub issues (`#1`–`#8`) are **CLOSED**. Await the Operator's e
 
 ## 9. IMMEDIATE NEXT STEPS
 1. Read `~/aim-cron-dashboard/HANDOFF.md` and `~/aim-cron-dashboard/memory-wiki/index.md`.
-2. Run `git status -sb && git log -n 5 --oneline && gh issue list --state open` to verify repository state.
-3. Ask the Operator whether to:
-   - **(A)** Open an issue and fix the `@shortcut` parser bug in `CronManager.get_crontab()` + `install.sh` symlink target (`bin/aim-cron`), or
-   - **(B)** Implement a new v0.2+ feature from `docs/AIM_CRON_FEATURE_AUDIT.md` (e.g., In-Place Job Edit `e` or Backup Restore Modal).
+2. Run `./venv/bin/python -m unittest discover -s tests -v && git status -sb && gh issue list --state open` to confirm baseline (`13/13` tests passing, `0` open issues).
+3. Await Operator directive (e.g., updating `README.md` with new hotkeys or pruning remote archive branches).
 

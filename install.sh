@@ -12,7 +12,7 @@ pip install -r requirements.txt
 # Create symlink
 echo "Creating symlink in ~/.local/bin..."
 mkdir -p ~/.local/bin
-ln -sf "$DIR/bin/aim-dash" ~/.local/bin/aim-cron-dashboard
+ln -sf "$DIR/bin/aim-cron" ~/.local/bin/aim-cron
 
 echo "aim-cron-dashboard installed successfully."
 echo "Make sure ~/.local/bin is in your PATH."

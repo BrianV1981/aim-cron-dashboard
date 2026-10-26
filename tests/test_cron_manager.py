@@ -203,5 +203,35 @@ class TestCronManagerIssue11(unittest.TestCase):
         self.assertEqual(modal.dialog_title, "Edit Cron Job")
 
 
+class TestCronManagerIssue12(unittest.TestCase):
+    def test_list_backups_and_restore_backup(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            backup_dir = Path(tmpdir)
+            b1 = backup_dir / "crontab.bak.20261025_120000"
+            b2 = backup_dir / "crontab.bak.20261026_153000"
+            b1.write_text("# header\n0 4 * * * /bin/old_job\n", encoding="utf-8")
+            b2.write_text("@daily /bin/new_job1\n*/5 * * * * /bin/new_job2\n", encoding="utf-8")
+
+            with patch.object(CronManager, "get_backup_dir", return_value=backup_dir):
+                backups = CronManager.list_backups()
+                self.assertEqual(len(backups), 2)
+                # Newest first
+                self.assertEqual(backups[0]["name"], "crontab.bak.20261026_153000")
+                self.assertEqual(backups[0]["timestamp"], "2026-10-26 15:30:00")
+                self.assertEqual(backups[0]["job_count"], 2)
+                self.assertEqual(backups[1]["name"], "crontab.bak.20261025_120000")
+                self.assertEqual(backups[1]["timestamp"], "2026-10-25 12:00:00")
+                self.assertEqual(backups[1]["job_count"], 1)
+
+                with patch.object(CronManager, "save_crontab") as mock_save:
+                    CronManager.restore_backup(b1)
+                    mock_save.assert_called_once_with(["# header", "0 4 * * * /bin/old_job"])
+
+                modal = dashboard.RestoreBackupModal(backups)
+                self.assertEqual(len(modal.backups), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -238,11 +238,15 @@ class CronManager:
             return ""
 
     @staticmethod
+    def get_backup_dir() -> Path:
+        return Path.home() / ".local" / "state" / "aim-cron-dashboard" / "backups"
+
+    @staticmethod
     def save_crontab(lines: list[str]) -> None:
         """Saves a list of strings as the new crontab, backing up the old one first."""
         current_content = CronManager.get_crontab_raw()
         if current_content.strip():
-            backup_dir = Path.home() / ".local" / "state" / "aim-cron-dashboard" / "backups"
+            backup_dir = CronManager.get_backup_dir()
             backup_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_file = backup_dir / f"crontab.bak.{timestamp}"
@@ -250,6 +254,46 @@ class CronManager:
 
         new_crontab = "\n".join(lines) + "\n"
         subprocess.run(["crontab", "-"], input=new_crontab, text=True, check=True)
+
+    @staticmethod
+    def list_backups() -> list[dict]:
+        """Returns available crontab backups sorted newest-first."""
+        backup_dir = CronManager.get_backup_dir()
+        if not backup_dir.exists():
+            return []
+        backups = []
+        for path in sorted(backup_dir.glob("crontab.bak.*"), key=lambda p: p.name, reverse=True):
+            if not path.is_file():
+                continue
+            raw_ts = path.name.removeprefix("crontab.bak.")
+            try:
+                dt = datetime.datetime.strptime(raw_ts, "%Y%m%d_%H%M%S")
+                ts_label = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                ts_label = raw_ts
+            content = path.read_text(encoding="utf-8", errors="replace")
+            job_count = sum(
+                1
+                for line in content.splitlines()
+                if line.strip() and CronManager._parse_cron_line(line.strip().lstrip("#").strip()) is not None
+            )
+            backups.append({
+                "path": path,
+                "name": path.name,
+                "timestamp": ts_label,
+                "job_count": job_count,
+                "content": content,
+            })
+        return backups
+
+    @staticmethod
+    def restore_backup(backup_path: Path | str) -> None:
+        """Restores a crontab snapshot file into the active crontab."""
+        target = Path(backup_path)
+        if not target.is_file():
+            raise FileNotFoundError(f"Backup file not found: {target}")
+        content = target.read_text(encoding="utf-8", errors="replace")
+        CronManager.save_crontab(content.splitlines())
         
     @staticmethod
     def add_job(schedule: str, cmd: str) -> None:
@@ -534,6 +578,114 @@ class ConfirmActionModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class RestoreBackupModal(ModalScreen[Path | None]):
+    """Modal dialog to browse and restore crontab backups."""
+
+    def __init__(self, backups: list[dict], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.backups = backups
+
+    CSS = """
+    RestoreBackupModal {
+        align: center middle;
+        background: $background 50%;
+    }
+    #restore-backup-dialog {
+        width: 90;
+        height: 28;
+        padding: 1 2;
+        background: $surface;
+        border: round $primary;
+    }
+    #backup-body {
+        height: 1fr;
+    }
+    #backup-list-pane {
+        width: 50%;
+        height: 100%;
+        padding-right: 1;
+    }
+    #backup-preview-pane {
+        width: 50%;
+        height: 100%;
+        border-left: solid $primary-muted;
+        padding-left: 2;
+        overflow-y: scroll;
+    }
+    #backup-table {
+        height: 100%;
+    }
+    .buttons {
+        width: 100%;
+        height: auto;
+        layout: horizontal;
+        align: center middle;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="restore-backup-dialog"):
+            yield Label("[b]Restore Crontab Backup[/b]\n")
+            with Horizontal(id="backup-body"):
+                with Vertical(id="backup-list-pane"):
+                    yield DataTable(id="backup-table", cursor_type="row")
+                with Vertical(id="backup-preview-pane"):
+                    yield Static("Select a backup to preview.", id="backup-preview")
+            with Horizontal(classes="buttons"):
+                yield Button("Restore Selected", variant="warning", id="btn-restore")
+                yield Button("Cancel", variant="primary", id="btn-cancel")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#backup-table", DataTable)
+        table.add_columns("Timestamp", "Jobs", "File")
+        for idx, b in enumerate(self.backups):
+            table.add_row(b["timestamp"], str(b["job_count"]), b["name"], key=str(idx))
+        table.focus()
+        self._update_backup_preview()
+
+    @on(DataTable.RowHighlighted, "#backup-table")
+    def on_backup_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        self._update_backup_preview()
+
+    def _get_selected_backup(self) -> dict | None:
+        table = self.query_one("#backup-table", DataTable)
+        if table.cursor_row is not None and self.backups:
+            try:
+                row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+                return self.backups[int(row_key)]
+            except Exception:
+                return None
+        return None
+
+    def _update_backup_preview(self) -> None:
+        preview = self.query_one("#backup-preview", Static)
+        selected = self._get_selected_backup()
+        if selected:
+            preview.update(
+                f"[bold cyan]{selected['name']}[/bold cyan]\n"
+                f"Snapshot Time: {selected['timestamp']} ({selected['job_count']} jobs)\n\n"
+                f"{selected['content']}"
+            )
+        else:
+            preview.update("No backup selected.")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-restore":
+            selected = self._get_selected_backup()
+            if selected:
+                self.dismiss(selected["path"])
+            else:
+                self.dismiss(None)
+        else:
+            self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class CronCommandProvider(Provider):
     async def discover(self) -> Hit:
         matcher = self.matcher("")
@@ -546,6 +698,7 @@ class CronCommandProvider(Provider):
         commands = [
             ("New Job", "Create a new cronjob", app.action_new_job),
             ("Edit Job", "Edit the selected cronjob in place", app.action_edit_job),
+            ("Restore Backup", "Browse and restore a previous crontab snapshot", app.action_restore_backup),
             ("Refresh Table", "Reload the cronjob list from system", app.action_refresh),
             ("Force Run Job", "Execute the selected job in background", app.action_force_run),
             ("Delete Job", "Delete the selected job", app.action_delete_job),
@@ -680,6 +833,7 @@ class CronDashboard(App):
         Binding("e", "edit_job", "Edit Job"),
         Binding("x", "delete_job", "Delete"),
         Binding("p", "toggle_job", "Pause/Resume"),
+        Binding("u", "restore_backup", "Restore Backup"),
         Binding("ctrl+r", "force_run", "Force Run"),
         Binding("[", "resize_left", "Shrink Pane"),
         Binding("]", "resize_right", "Expand Pane"),
@@ -827,6 +981,24 @@ class CronDashboard(App):
                 except (ValueError, subprocess.CalledProcessError) as err:
                     self.notify(f"Failed to save job: {err}", title="Error", severity="error")
         self.push_screen(NewJobModal(), check_new_job)
+
+    def action_restore_backup(self) -> None:
+        backups = CronManager.list_backups()
+        if not backups:
+            self.notify("No crontab backups found in ~/.local/state/aim-cron-dashboard/backups/.", title="Backups")
+            return
+
+        def check_restore(selected_path: Path | None) -> None:
+            if selected_path is not None:
+                try:
+                    CronManager.restore_backup(selected_path)
+                    self.refresh_jobs()
+                    self.update_preview()
+                    self.notify(f"Restored backup: {selected_path.name}", title="Success")
+                except (OSError, subprocess.CalledProcessError) as err:
+                    self.notify(f"Failed to restore backup: {err}", title="Error", severity="error")
+
+        self.push_screen(RestoreBackupModal(backups), check_restore)
 
     def action_edit_job(self) -> None:
         table = self.query_one("#job-table", DataTable)

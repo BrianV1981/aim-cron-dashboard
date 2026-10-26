@@ -233,5 +233,56 @@ class TestCronManagerIssue12(unittest.TestCase):
                 self.assertEqual(len(modal.backups), 2)
 
 
+class TestCronManagerIssue13(unittest.TestCase):
+    def test_load_and_save_settings_persistence(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_file = Path(tmpdir) / "settings.json"
+            with patch.object(CronManager, "get_settings_path", return_value=settings_file):
+                # Default settings when file does not exist
+                defaults = CronManager.load_settings()
+                self.assertTrue(defaults["show_ai_badges"])
+                self.assertTrue(defaults["confirm_force_run"])
+                self.assertEqual(defaults["left_panel_size"], 60)
+                self.assertTrue(defaults["is_horizontal"])
+                self.assertFalse(defaults["is_swapped"])
+
+                # Save custom settings and reload
+                custom = {
+                    "show_ai_badges": False,
+                    "confirm_force_run": False,
+                    "left_panel_size": 75,
+                    "is_horizontal": False,
+                    "is_swapped": True,
+                }
+                CronManager.save_settings(custom)
+                self.assertTrue(settings_file.is_file())
+                reloaded = CronManager.load_settings()
+                self.assertEqual(reloaded, custom)
+
+    def test_execute_command_capture_records_output_and_exit_status(self):
+        mock_proc_ok = MagicMock()
+        mock_proc_ok.communicate.return_value = ("Backup completed successfully\n", None)
+        mock_proc_ok.returncode = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc_ok) as mock_popen:
+            res_ok = CronManager.execute_command_capture("/bin/echo hello")
+            mock_popen.assert_called_once()
+            self.assertEqual(res_ok["status"], "OK")
+            self.assertEqual(res_ok["returncode"], 0)
+            self.assertIn("Backup completed successfully", res_ok["output"])
+
+        mock_proc_fail = MagicMock()
+        mock_proc_fail.communicate.return_value = ("Permission denied\n", None)
+        mock_proc_fail.returncode = 1
+
+        with patch("subprocess.Popen", return_value=mock_proc_fail):
+            res_fail = CronManager.execute_command_capture("/bin/false")
+            self.assertEqual(res_fail["status"], "FAIL")
+            self.assertEqual(res_fail["returncode"], 1)
+            self.assertIn("Permission denied", res_fail["output"])
+
+
 if __name__ == "__main__":
     unittest.main()

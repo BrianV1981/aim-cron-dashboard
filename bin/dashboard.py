@@ -3,6 +3,8 @@ import subprocess
 import os
 import sys
 import re
+import json
+import threading
 import datetime
 from pathlib import Path
 from textual.app import App, ComposeResult
@@ -240,6 +242,72 @@ class CronManager:
     @staticmethod
     def get_backup_dir() -> Path:
         return Path.home() / ".local" / "state" / "aim-cron-dashboard" / "backups"
+
+    DEFAULT_SETTINGS = {
+        "show_ai_badges": True,
+        "confirm_force_run": True,
+        "left_panel_size": 60,
+        "is_horizontal": True,
+        "is_swapped": False,
+    }
+
+    @staticmethod
+    def get_settings_path() -> Path:
+        return Path.home() / ".config" / "aim-cron-dashboard" / "settings.json"
+
+    @classmethod
+    def load_settings(cls) -> dict:
+        settings = dict(cls.DEFAULT_SETTINGS)
+        path = cls.get_settings_path()
+        if path.is_file():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    for key, default_val in cls.DEFAULT_SETTINGS.items():
+                        if key in loaded and isinstance(loaded[key], type(default_val)):
+                            settings[key] = loaded[key]
+            except Exception:
+                pass
+        return settings
+
+    @classmethod
+    def save_settings(cls, settings: dict) -> None:
+        path = cls.get_settings_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            merged = dict(cls.DEFAULT_SETTINGS)
+            merged.update(settings)
+            path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
+    @staticmethod
+    def execute_command_capture(cmd: str) -> dict:
+        """Executes a command in a detached session while capturing stdout/stderr and exit code."""
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                shell=True,
+                start_new_session=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            stdout, _ = proc.communicate()
+            returncode = proc.returncode
+            status = "OK" if returncode == 0 else "FAIL"
+            output = (stdout or "").strip() or "(no output)"
+        except Exception as exc:
+            returncode = -1
+            status = "FAIL"
+            output = str(exc)
+        return {
+            "status": status,
+            "returncode": returncode,
+            "timestamp": timestamp,
+            "output": output,
+        }
 
     @staticmethod
     def save_crontab(lines: list[str]) -> None:
@@ -855,24 +923,64 @@ class CronDashboard(App):
         self.theme = "aim-dark"
         self.title = "A.I.M. Sovereign Orchestrator"
         self.sub_title = "Cron Dashboard"
+        self.jobs = []
+        self.run_history: dict[str, dict] = {}
+        saved = CronManager.load_settings()
+        self.show_ai_badges = saved["show_ai_badges"]
+        self.confirm_force_run = saved["confirm_force_run"]
+        self.left_panel_size = max(10, min(90, saved["left_panel_size"]))
+        self.is_horizontal = saved["is_horizontal"]
+        self.is_swapped = saved["is_swapped"]
         table = self.query_one("#job-table", DataTable)
         table.add_columns("Schedule", "Human Readable", "Command")
-        self.jobs = []
+        self._apply_saved_layout_structure()
         self.refresh_jobs()
         table.focus()
 
+    def _save_current_settings(self) -> None:
+        CronManager.save_settings({
+            "show_ai_badges": self.show_ai_badges,
+            "confirm_force_run": self.confirm_force_run,
+            "left_panel_size": self.left_panel_size,
+            "is_horizontal": self.is_horizontal,
+            "is_swapped": self.is_swapped,
+        })
+
+    def _apply_saved_layout_structure(self) -> None:
+        orientation = "horizontal" if self.is_horizontal else "vertical"
+        container = self.query_one("#app-container")
+        container.styles.layout = orientation
+        left = self.query_one("#left-panel")
+        right = self.query_one("#main-panel")
+        if self.is_swapped:
+            container.move_child(left, after=right)
+        else:
+            container.move_child(left, before=right)
+        self.apply_layout()
+
     def format_cmd(self, cmd: str) -> str:
-        """Add a high-visibility badge to known AI agent processes."""
+        """Add a high-visibility badge to known AI agent processes and recent force-run status."""
+        run_badge = ""
+        history = getattr(self, "run_history", {}).get(cmd)
+        if history:
+            st = history.get("status")
+            if st == "RUNNING":
+                run_badge = "[bold yellow][RUNNING][/bold yellow] "
+            elif st == "OK":
+                run_badge = "[bold green][OK][/bold green] "
+            elif st == "FAIL":
+                run_badge = "[bold red][FAIL][/bold red] "
+
         if not self.show_ai_badges:
-            return cmd
+            return f"{run_badge}{cmd}"
             
         if "tmux new-session" in cmd:
-            return f"🤖 [bold cyan][Ephemeral A.I.M. Agent][/bold cyan] {cmd}"
+            return f"{run_badge}🤖 [bold cyan][Ephemeral A.I.M. Agent][/bold cyan] {cmd}"
             
         agents = ["agy", "aider", "claude", "grok", "gpt", "agent", "opencode", "gemini", "codex", "antigravity"]
         if any(agent in cmd.lower() for agent in agents):
-            return f"[bold cyan][A.I.][/bold cyan] {cmd}"
-        return cmd
+            return f"{run_badge}[bold cyan][A.I.][/bold cyan] {cmd}"
+        return f"{run_badge}{cmd}"
 
     def refresh_jobs(self) -> None:
         table = self.query_one("#job-table", DataTable)
@@ -911,11 +1019,13 @@ class CronDashboard(App):
 
     def action_toggle_badges(self) -> None:
         self.show_ai_badges = not self.show_ai_badges
+        self._save_current_settings()
         self.refresh_jobs()
         self.notify(f"A.I.M. Badges {'enabled' if self.show_ai_badges else 'disabled'}.")
 
     def action_toggle_force_run_warning(self) -> None:
         self.confirm_force_run = not self.confirm_force_run
+        self._save_current_settings()
         self.notify(f"Force Run Warning {'enabled' if self.confirm_force_run else 'disabled'}.")
 
     def action_show_resize_help(self) -> None:
@@ -924,28 +1034,19 @@ class CronDashboard(App):
     def action_set_layout(self, orientation: str, swapped: bool) -> None:
         self.is_horizontal = (orientation == "horizontal")
         self.is_swapped = swapped
-        
-        container = self.query_one("#app-container")
-        container.styles.layout = orientation
-        
-        left = self.query_one("#left-panel")
-        right = self.query_one("#main-panel")
-        
-        if swapped:
-            container.move_child(left, after=right)
-        else:
-            container.move_child(left, before=right)
-            
-        self.apply_layout()
-        self.notify(f"Layout changed.")
+        self._apply_saved_layout_structure()
+        self._save_current_settings()
+        self.notify("Layout changed.")
 
     def action_resize_left(self) -> None:
         self.left_panel_size = max(10, self.left_panel_size - 5)
         self.apply_layout()
+        self._save_current_settings()
 
     def action_resize_right(self) -> None:
         self.left_panel_size = min(90, self.left_panel_size + 5)
         self.apply_layout()
+        self._save_current_settings()
 
     def apply_layout(self) -> None:
         left = self.query_one("#left-panel")
@@ -1070,8 +1171,26 @@ class CronDashboard(App):
                 
                 def check_run(confirm: bool) -> None:
                     if confirm:
-                        subprocess.Popen(cmd, shell=True, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        self.run_history[cmd] = {
+                            "status": "RUNNING",
+                            "returncode": None,
+                            "timestamp": now_str,
+                            "output": "Executing in background...",
+                        }
+                        self.refresh_jobs()
+                        self.update_preview()
                         self.notify(f"Dispatched background task:\n{cmd}", title="Force Run Initiated")
+
+                        def _worker() -> None:
+                            result = CronManager.execute_command_capture(cmd)
+                            self.run_history[cmd] = result
+                            try:
+                                self.call_from_thread(self._on_force_run_complete, cmd, result)
+                            except Exception:
+                                pass
+
+                        threading.Thread(target=_worker, daemon=True).start()
 
                 if self.confirm_force_run:
                     modal = ConfirmActionModal(
@@ -1085,6 +1204,18 @@ class CronDashboard(App):
                     check_run(True)
             except Exception:
                 self.notify("Error selecting job for force run.", severity="error")
+
+    def _on_force_run_complete(self, cmd: str, result: dict) -> None:
+        self.refresh_jobs()
+        self.update_preview()
+        if result["status"] == "OK":
+            self.notify(f"Completed (exit 0):\n{cmd}", title="Force Run OK")
+        else:
+            self.notify(
+                f"Failed (exit {result['returncode']}):\n{cmd}",
+                title="Force Run Failed",
+                severity="error",
+            )
 
     def action_toggle_job(self) -> None:
         table = self.query_one("#job-table", DataTable)
@@ -1138,6 +1269,20 @@ class CronDashboard(App):
                 preview_text += f"Raw Schedule: {job['raw_schedule']}\n"
                 preview_text += f"Human Readable: {job['human_schedule']}\n\n"
                 preview_text += f"Command:\n{job['cmd']}"
+
+                history = getattr(self, "run_history", {}).get(job["cmd"])
+                if history:
+                    st = history["status"]
+                    if st == "RUNNING":
+                        badge = "[bold yellow]RUNNING[/bold yellow]"
+                    elif st == "OK":
+                        badge = f"[bold green]OK (exit {history['returncode']})[/bold green]"
+                    else:
+                        badge = f"[bold red]FAIL (exit {history['returncode']})[/bold red]"
+                    preview_text += (
+                        f"\n\n[bold cyan]Last Force Run:[/bold cyan] {badge} at {history['timestamp']}\n"
+                        f"Output:\n{history['output']}"
+                    )
                 preview_area.update(preview_text)
             except Exception:
                 preview_area.update("Select a cronjob to preview.")

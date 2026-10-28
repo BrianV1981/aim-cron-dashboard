@@ -1,31 +1,21 @@
 # A.I.M. Cron Dashboard: Roadmap
 
-**ATTENTION INCOMING AGENT:** 
-You are building `aim-cron-dashboard`. This is a "sister project" to the Operator's existing tool, `aim-tmux-dashboard` (located at `~/aim-tmux-dashboard`). 
-**DO NOT build a UI from scratch.** Your very first action must be to copy the Textual UI shell, CSS, and aesthetic design from `aim-tmux-dashboard`. We want both tools to feel like identical twin cockpits in the A.I.M. ecosystem.
+`aim-cron-dashboard` (`aim-cron`) is the sister TUI cockpit to `aim-tmux-dashboard` (`~/aim-tmux-dashboard`), sharing the `aim-dark` Textual aesthetic, dynamic split-pane layouts, and nested Command Palette design.
 
 ---
 
-## Phase 1: The UI Shell Clone (MVP Foundation)
-1. **Scaffold the Repo:** Copy `bin/dashboard.py` and the surrounding package structure from `~/aim-tmux-dashboard`.
-2. **Rip and Replace:** Delete the `TmuxManager` class. Delete the tree view that renders tmux sessions.
-3. **The Base UI:** Replace the left tree with a `DataTable` or `ListView` designed to hold cronjobs. Keep the cyan `[A.I.]` color palette and dark mode aesthetics.
+## ✅ Completed Milestones (`v0.1.0` – `v0.2.0`)
 
-## Phase 2: The Cron Engine (Read-Only)
-1. **System Crontab:** Build a `CronManager` class that uses `subprocess.run(["crontab", "-l"])` to read the current user's system cron.
-2. **Human Translation:** Add `cron-descriptor` to the `requirements.txt`. Use it to translate raw syntax (`0 4 * * *`) into human-readable strings ("Runs every day at 4:00 AM") in the UI.
-3. **Display:** Render the parsed cron jobs cleanly into the UI grid.
+### Phase 1 & 2: UI Shell & Cron Engine (`#1`, `#2`, `#9`)
+* [x] **Textual Split-Pane Cockpit:** `DataTable` job list on the left, detailed status/command preview on the right, and live `/` substring search.
+* [x] **System Crontab & Human Translation:** `CronManager.get_crontab()` backed by `crontab -l` and `cron-descriptor`, supporting both 5-field cron expressions and `@shortcut` nicknames (`@reboot`, `@hourly`, `@midnight`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@annually`).
 
-## Phase 3: Interactive Management (CRUD)
-1. **New Job Modal (Hotkey `n`):** Build a Textual Modal that asks for a schedule string and a bash command. Use `subprocess` to securely append it to the crontab.
-2. **Delete Job (Hotkey `x`):** Allow the user to highlight a job and delete it from the system crontab.
-3. **Pause/Resume Toggle (Hotkey `p`):** When pressed, edit the `crontab` file to prepend a `#` (comment) to the job, effectively pausing it. Pressing `p` again removes the `#` to resume it.
+### Phase 3: Interactive CRUD & Validation (`#3`, `#9`, `#11`)
+* [x] **New Job (`n`) & In-Place Edit (`e`):** `NewJobModal` with quick-select schedule presets, side-by-side cron cheatsheet, and `CronManager.validate_schedule()`.
+* [x] **Delete (`x`) & Pause/Resume Toggle (`p`):** Line-index-aware crontab updates with confirmation dialogs.
 
-## Phase 4: A.I.M. Polish (v0.2 Features)
-*Refer to `AIM_CRON_FEATURE_AUDIT.md` for full details.*
-1. **Agent Badging:** If a cronjob command contains `tmux new-session`, badge it in the UI with a 🤖 or ⏰ emoji to denote an "Ephemeral A.I.M. Agent."
-2. **Force Run (Hotkey `r`):** Instantly execute the highlighted job's command in the background for testing.
-3. **Safety Backups:** Before performing any writes to the crontab, save a backup copy (e.g., `crontab.bak.<timestamp>`).
-
----
-**CRITICAL DIRECTIVE:** Do not attempt to build Phase 3 or Phase 4 until Phase 1 and Phase 2 are empirically proven to work. Stay focused on the MVP.
+### Phase 4: A.I.M. Polish, Backups & Layouts (`#4`–`#14`)
+* [x] **Agent Badging:** Automatic `🤖 [Ephemeral A.I.M. Agent]` (`tmux new-session`) and `[A.I.]` badging.
+* [x] **Detached Force Run (`Ctrl+R`):** Background execution with live `[RUNNING]` / `[OK]` / `[FAIL]` badge, exit code, and `stdout`/`stderr` capture (`#13`).
+* [x] **Automatic Safety Backups & Time-Machine Restore (`u`):** Timestamped `crontab.bak.<timestamp>` snapshots before every write and `RestoreBackupModal` (`#4`, `#12`).
+* [x] **Dynamic Layouts & Persistent Settings:** 4 switchable orientations (`Side-by-Side`, `Stacked`), `[` / `]` pane resizing, nested Command Palette submenus (`#5`–`#7`), and persistent `~/.config/aim-cron-dashboard/settings.json` (`#13`).

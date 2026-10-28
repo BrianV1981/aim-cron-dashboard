@@ -16,3 +16,7 @@ Chronological, append-only record of knowledge ingestion into `memory-wiki/` via
 - **Issue #12 (`50aaa18`):** Added `CronManager.list_backups()`, `CronManager.restore_backup()`, and `RestoreBackupModal` (`u` hotkey & Command Palette) to browse, preview, and restore snapshots from `~/.local/state/aim-cron-dashboard/backups/`.
 - **Issue #13 (`49ea549`):** Added persistent UI settings (`~/.config/aim-cron-dashboard/settings.json` via `CronManager.load_settings()` / `save_settings()`) and asynchronous `Force Run` (`ctrl+r`) output + exit code capture (`CronManager.execute_command_capture()`) with `[RUNNING]` / `[OK]` / `[FAIL]` row badges and live preview output.
 - Updated `pages/architecture.md`, `pages/ai_agent_and_cron_engine.md`, `pages/roadmap_and_history.md`, and `HANDOFF.md`.
+
+## [2026-10-28] ingest | Synchronize README, CHANGELOG, and Roadmap with v0.2.0 Codebase (Issue #14)
+- Overhauled `README.md` to document `./install.sh`, all keyboard shortcuts (`n`, `e`, `p`, `x`, `u`, `Ctrl+R`, `/`, `[`, `]`, `r`, `?`, `Ctrl+P`, `q`), all 3 Command Palette submenus, and local backup/settings paths, removing the stale Issue `#7` note.
+- Populated `CHANGELOG.md` (`v0.1.0`–`v0.2.0`), bumped `VERSION` to `v0.2.0`, and updated `docs/ROADMAP.md` and `pages/roadmap_and_history.md` to mark Phases 1–4 as completed.

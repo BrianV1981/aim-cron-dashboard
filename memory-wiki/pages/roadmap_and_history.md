@@ -13,12 +13,13 @@ All 13 GitHub issues in `BrianV1981/aim-cron-dashboard` have been resolved and c
 | **#6 — Phase 6: Layout Management & Themes** | `7e67f52`, `891d5c8`, `38214a4` | Registered `aim-dark` theme, added `[` / `]` dynamic pane resizing with `HelpModal` (`?`), and structural layout switching (`Side-by-Side` & `Stacked`) via `container.move_child`. | ✅ CLOSED |
 | **#7 — Command Palette Submenus & Matcher Fix** | `1eff1c6`, `db1809c`, `0405961` | Refactored Command Palette to native nested submenus (`get_system_commands` 4-tuple) and bypassed Textual's empty-query `ValueError` by yielding `Hit(1.0, ...)` when `query` is empty. | ✅ CLOSED |
 | **Packaging & Docs** | `12a45ba`, `759ed1f` | Renamed launcher from `bin/aim-dash` to `bin/aim-cron`, updated `.gitignore`, and authored `README.md`. | ✅ SHIPPED |
-| **#8 — Shareability Path Scrub** | `efc65df` | Replaced hardcoded `/home/kingb/aim-tmux-dashboard` path with `~/aim-tmux-dashboard` in `docs/ROADMAP.md`. | ✅ CLOSED |
+| **#8 — Shareability Path Scrub** | `efc65df` | Replaced hardcoded host home path with `~/aim-tmux-dashboard` in `docs/ROADMAP.md`. | ✅ CLOSED |
 | **#9 — `@shortcut` Parser, Comment Filter & Validation** | `c54af8e` | Added `@shortcut` 2-token schedule parsing, prose comment & `ENV=val` filtering, `CronManager.validate_schedule()` bounds checking, and unit test suite (`tests/test_cron_manager.py`). | ✅ CLOSED |
 | **#10 — Installer Symlink & Venv Hint Fix** | `73c7f62` | Updated `install.sh` to symlink `bin/aim-cron -> ~/.local/bin/aim-cron`, updated `bin/aim-cron` setup hint to `./install.sh`, and added `tests/test_install_scripts.py`. | ✅ CLOSED |
 | **#11 — In-Place Job Editing (`e`) & Line-Index Targeting** | `e15e431` | Added `CronManager.edit_job()`, `line_index` targeting for edit/delete/toggle, pre-populated `NewJobModal`, and hotkey `e` (`Edit Job`). | ✅ CLOSED |
 | **#12 — Backup Restore Modal (`u`)** | `50aaa18` | Added `CronManager.list_backups()`, `CronManager.restore_backup()`, and `RestoreBackupModal` (`u` hotkey & Command Palette). | ✅ CLOSED |
 | **#13 — Persistent Settings & Force Run Output Capture** | `49ea549` | Added `~/.config/aim-cron-dashboard/settings.json` persistence and background `Force Run` output/exit-code capture with `[RUNNING]` / `[OK]` / `[FAIL]` badges. | ✅ CLOSED |
+| **#14 — v0.2.0 Documentation & Changelog Sync** | `HEAD` | Synchronized `README.md`, `CHANGELOG.md`, `VERSION` (`v0.2.0`), `docs/ROADMAP.md`, and `memory-wiki/` with the live codebase. | ✅ CLOSED |
 
 ## 2. Remaining Optional Wishlist Items (`docs/AIM_CRON_FEATURE_AUDIT.md`)
 From the master feature audit comparing `aim-cron-dashboard` against Cronboard, Crontab-UI, Cronmaster, Cronpilot, and Cronn, only advanced distributed/webhook items remain optional candidates for future versions:

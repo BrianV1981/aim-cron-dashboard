@@ -62,6 +62,14 @@ You operate in a highly parallel, multi-agent environment. To prevent collisions
 3. **Ship:** After PR / promote path, `aim projects done <issue_id>`.
 4. **Blocked:** `aim projects blocked <issue_id>` when waiting on Operator/DNS/external.
 
+## 8c. THE A-MAIL PROTOCOL (INTER-AGENT COMMUNICATION)
+**A-Mail** (`amail` / `aim-mail`, powered by `aim-mailbox`) is the only inter-agent transport on every OS and harness.
+- **Sole Transport:** Never use `aim-communicate`, `tmux_send.sh`, raw `tmux send-keys`, or `aim-chalkboard`. For POSIX `tmux` targets use `amail`'s native `--driver tmux`; Windows uses the Desktop Sidecar or the CLI wrappers.
+- **Envelope Hygiene:** Every dispatch sets an explicit `--from` and `--reply-to`; initial dispatches require `--operator-approved`; replies are bounded (`max_hops=1`) and final reports say `DO NOT reply`.
+- **Loop Discipline:** Run `aim-mail check` at turn boundaries (never a spin loop), `inbox`/`read` before acting, `ack` when complete, and `wait`/`pulse`/hooks when blocking. One mental model, one CLI verb.
+- **Guards:** Respect `agents.json` DND/BUSY state and WIP locks; never wake a DND agent or mutate a live vertical mid-batch — file a follow-up ticket instead.
+- **Canonical Skill:** `aim-mail` (triggers: A-Mail, amail, aim-mail, aim-mailbox, legacy aim-communicate). Completion reports go to the dispatcher's `reply_to` via `amail`.
+
 ## 9. THE MEMORY WIKI (PERSISTENT KNOWLEDGE)
 The `memory-wiki/` directory is the persistent, compounding LLM knowledge base.
 - You MUST explicitly invoke the `aim-memory-wiki` skill to document new architectural decisions, structural discoveries, or major workflow changes.
